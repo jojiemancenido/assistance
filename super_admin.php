@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once "auth.php";
 require_super_admin();
 require_once "db.php";
@@ -1099,23 +1099,31 @@ $saBaseQuery = [
         <details id="create-account-panel" class="accounts-create-disclosure">
           <summary class="accounts-create-disclosure__summary">
             <div class="accounts-create-disclosure__title">
+              <span class="accounts-create-kicker">Account Manager</span>
               <h3>Create Account</h3>
-              <p>Click to open the form and add a new account.</p>
+              <p>Create admin, user, or super_admin credentials in a secure form.</p>
             </div>
-            <span class="accounts-create-disclosure__plus" aria-hidden="true">+</span>
+            <div class="accounts-create-disclosure__meta">
+              <span class="accounts-create-disclosure__chip">Secure Form</span>
+              <span class="accounts-create-disclosure__plus" aria-hidden="true">+</span>
+            </div>
           </summary>
           <div class="accounts-create-panel">
+            <div class="accounts-create-panel__intro">
+              <h4>New Account Setup</h4>
+              <p>Assign username, password, and role. Accounts appear instantly in the table below.</p>
+            </div>
             <form class="accounts-create-form" method="POST" action="super_admin.php" autocomplete="off">
               <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
               <input type="hidden" name="action" value="create_account" />
               <div class="form-grid accounts-create-grid">
                 <div class="field">
                   <label for="new_username">Username</label>
-                  <input id="new_username" name="new_username" type="text" required />
+                  <input id="new_username" name="new_username" type="text" required placeholder="Enter username" />
                 </div>
                 <div class="field">
                   <label for="new_password">Password</label>
-                  <input id="new_password" name="new_password" type="password" required />
+                  <input id="new_password" name="new_password" type="password" required placeholder="Enter secure password" />
                 </div>
                 <div class="field accounts-create-role">
                   <label for="new_role">Role</label>
@@ -1128,6 +1136,7 @@ $saBaseQuery = [
               </div>
               <div class="actions accounts-create-actions">
                 <button class="btn" type="submit">Create Account</button>
+                <span class="accounts-create-actions__note">Use strong passwords for higher-privilege roles.</span>
               </div>
             </form>
           </div>
