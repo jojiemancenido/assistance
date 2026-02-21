@@ -489,7 +489,7 @@ $barangayRecordTotal = 0;
 $barangayTotalsRs = @$conn->query(
   "SELECT TRIM(barangay) AS barangay_name, COUNT(*) AS total_records
    FROM records
-   WHERE barangay IS NOT NULL AND TRIM(barangay) <> ''
+   WHERE barangay IS NOT NULL AND TRIM(barangay) <> '' AND LOWER(TRIM(barangay)) NOT IN ('other','others')
    GROUP BY TRIM(barangay)
    ORDER BY total_records DESC, barangay_name ASC"
 );
@@ -530,7 +530,7 @@ $amountTotalForPercentage = 0.0;
 $barangayAmountRs = @$conn->query(
   "SELECT TRIM(barangay) AS barangay_name, COALESCE(SUM(amount), 0) AS total_amount
    FROM records
-   WHERE barangay IS NOT NULL AND TRIM(barangay) <> ''
+   WHERE barangay IS NOT NULL AND TRIM(barangay) <> '' AND LOWER(TRIM(barangay)) NOT IN ('other','others')
    GROUP BY TRIM(barangay)
    ORDER BY total_amount DESC, barangay_name ASC"
 );
@@ -554,25 +554,6 @@ if ($amountTotalForPercentage > 0) {
 $topAmountBarangay = (!empty($barangayAmountStats)) ? $barangayAmountStats[0] : null;
 
 $amountBarangayChartItems = $barangayAmountStats;
-$amountBarangaySliceLimit = 8;
-if (count($amountBarangayChartItems) > $amountBarangaySliceLimit) {
-  $head = array_slice($amountBarangayChartItems, 0, $amountBarangaySliceLimit - 1);
-  $tail = array_slice($amountBarangayChartItems, $amountBarangaySliceLimit - 1);
-  $othersAmount = 0.0;
-  $othersPct = 0.0;
-  foreach ($tail as $item) {
-    $othersAmount += (float)($item["amount"] ?? 0.0);
-    $othersPct += (float)($item["percentage"] ?? 0.0);
-  }
-  if ($othersAmount > 0) {
-    $head[] = [
-      "name" => "Others",
-      "amount" => $othersAmount,
-      "percentage" => $othersPct,
-    ];
-  }
-  $amountBarangayChartItems = $head;
-}
 
 $amountBarangayGradientParts = [];
 $amountBarangayCursor = 0.0;
@@ -594,25 +575,6 @@ $amountBarangayDonutGradient = !empty($amountBarangayGradientParts)
   ? ("conic-gradient(" . implode(", ", $amountBarangayGradientParts) . ")")
   : "conic-gradient(#e2e8f0 0% 100%)";
 $barangayChartItems = $barangayStats;
-$barangaySliceLimit = 8;
-if (count($barangayChartItems) > $barangaySliceLimit) {
-  $head = array_slice($barangayChartItems, 0, $barangaySliceLimit - 1);
-  $tail = array_slice($barangayChartItems, $barangaySliceLimit - 1);
-  $othersCount = 0;
-  $othersPct = 0.0;
-  foreach ($tail as $item) {
-    $othersCount += (int)($item["count"] ?? 0);
-    $othersPct += (float)($item["percentage"] ?? 0.0);
-  }
-  if ($othersCount > 0) {
-    $head[] = [
-      "name" => "Others",
-      "count" => $othersCount,
-      "percentage" => $othersPct,
-    ];
-  }
-  $barangayChartItems = $head;
-}
 
 $barangayGradientParts = [];
 $barangayCursor = 0.0;
