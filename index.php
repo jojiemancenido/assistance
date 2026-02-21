@@ -893,7 +893,15 @@ $baseQuery = [
           <div class="record-view-item"><span>Year-Month</span><strong id="view-record-month-year">-</strong></div>
           <div class="record-view-item record-view-item--full"><span>Notes</span><strong id="view-record-notes">-</strong></div>
         </div>
-        <div class="actions">
+        <div class="actions record-view-actions">
+          <button type="button" class="btn btn--secondary btn--sm record-view-print-btn" id="record-view-print" aria-label="Print record details">
+            <span class="record-view-print-btn__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                <path d="M7 3h10v4H7V3zm10 16H7v-5h10v5zm2-11H5a2 2 0 0 0-2 2v5h4v-3h10v3h4v-5a2 2 0 0 0-2-2z" fill="currentColor"></path>
+              </svg>
+            </span>
+            <span>Print</span>
+          </button>
           <button type="button" class="btn btn--secondary btn--sm" id="record-view-close-footer">Close</button>
         </div>
       </div>
@@ -977,7 +985,10 @@ $baseQuery = [
     (function(){
       const overlay = document.getElementById('record-view-overlay');
       const closeTop = document.getElementById('record-view-close');
+      
       const closeFooter = document.getElementById('record-view-close-footer');
+      
+      const printBtn = document.getElementById('record-view-print');
       if (!overlay) return;
 
       const fields = {
@@ -1030,8 +1041,23 @@ $baseQuery = [
         }
       });
 
+      
       if (closeTop) closeTop.addEventListener('click', closeView);
       if (closeFooter) closeFooter.addEventListener('click', closeView);
+      
+      
+      function runRecordPrint(){
+        document.body.classList.add('print-record-view');
+        window.print();
+        window.setTimeout(function(){
+          document.body.classList.remove('print-record-view');
+        }, 1000);
+      }
+
+      if (printBtn) printBtn.addEventListener('click', runRecordPrint);
+      window.addEventListener('afterprint', function(){
+        document.body.classList.remove('print-record-view');
+      });
 
       document.addEventListener('keydown', function(e){
         if (e.key === 'Escape' && !overlay.classList.contains('hidden')) {

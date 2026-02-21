@@ -909,6 +909,96 @@ body.modal-open{
   grid-column:1 / -1;
 }
 
+.record-view-actions{
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+  gap:8px;
+}
+
+.record-view-print-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+
+.record-view-print-btn__icon{
+  width:14px;
+  height:14px;
+  display:inline-flex;
+}
+
+.record-view-print-btn__icon svg{
+  width:100%;
+  height:100%;
+  display:block;
+}
+
+@media print{
+  @page{
+    size:A4 portrait;
+    margin:0.4in;
+  }
+
+  html,
+  body{
+    height:auto !important;
+  }
+
+  body.print-record-view{
+    margin:0 !important;
+    padding:0 !important;
+    background:#fff !important;
+  }
+
+  body.print-record-view .app > *:not(#record-view-overlay){
+    display:none !important;
+  }
+
+  body.print-record-view #record-view-overlay{
+    position:static !important;
+    display:block !important;
+    inset:auto !important;
+    margin:0 !important;
+    padding:0 !important;
+    background:#fff !important;
+    backdrop-filter:none !important;
+  }
+
+  body.print-record-view #record-view-overlay .record-view-panel{
+    width:5in;
+    min-height:7in;
+    max-height:none;
+    overflow:visible;
+    margin:0 auto !important;
+    border:1px solid #94a3b8;
+    border-radius:0;
+    box-shadow:none;
+    padding:0.24in;
+    box-sizing:border-box;
+    break-inside:avoid-page;
+    page-break-inside:avoid;
+  }
+
+  body.print-record-view #record-view-overlay .record-view-panel__head{
+    margin-bottom:0.18in;
+  }
+
+  body.print-record-view #record-view-overlay .record-view-grid{
+    gap:0.12in;
+  }
+
+  body.print-record-view #record-view-overlay .record-view-item{
+    padding:0.1in 0.12in;
+    border-radius:6px;
+  }
+
+  body.print-record-view #record-view-overlay .record-view-actions,
+  body.print-record-view #record-view-overlay .record-view-close{
+    display:none !important;
+  }
+}
+
 @media (max-width: 680px){
   .record-view-overlay{
     padding:12px;
