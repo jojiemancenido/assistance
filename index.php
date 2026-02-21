@@ -295,7 +295,7 @@ $baseQuery = [
         <img class="logo" src="daet logo lgu.png" alt="Logo" />
         <div class="brand-text">
           <h1>Beneficiary Records</h1>
-          <p>Daet, Camarines Norte • Quick entry + search</p>
+          <p>Daet, Camarines Norte â€¢ Quick entry + search</p>
         </div>
       </div>
 
@@ -323,7 +323,6 @@ $baseQuery = [
         <details class="account-menu">
           <summary class="btn btn--secondary btn--sm account-menu__summary">
             <span class="account-menu__summary-label">Account</span>
-            <span class="account-menu__summary-caret" aria-hidden="true">v</span>
           </summary>
           <div class="account-menu__panel">
             <div class="account-menu__panel-head">Account Options</div>
@@ -590,7 +589,7 @@ $baseQuery = [
                     <span class="th-with-menu">
                       <span>Type</span>
                       <details class="th-menu">
-                        <summary class="th-menu__summary" aria-label="Type filter">v</summary>
+                        <summary class="th-menu__summary" aria-label="Type filter"></summary>
                         <div class="th-menu__list">
                           <a href="index.php?<?php echo build_query($baseQuery, ["type" => ""]); ?>#records-section">All Types</a>
                           <?php foreach ($orderedTypeLabels as $label): ?>
@@ -604,7 +603,7 @@ $baseQuery = [
                     <span class="th-with-menu">
                       <span>Barangay</span>
                       <details class="th-menu">
-                        <summary class="th-menu__summary" aria-label="Barangay filter">v</summary>
+                        <summary class="th-menu__summary" aria-label="Barangay filter"></summary>
                         <div class="th-menu__list">
                           <a href="index.php?<?php echo build_query($baseQuery, ["barangay" => ""]); ?>#records-section">All Barangays</a>
                           <?php foreach ($barangays as $b): ?>
@@ -636,7 +635,7 @@ $baseQuery = [
                         </svg>
                       </button>
                       <details class="th-menu">
-                        <summary class="th-menu__summary" aria-label="Amount sort">v</summary>
+                        <summary class="th-menu__summary" aria-label="Amount sort"></summary>
                         <div class="th-menu__list">
                           <a href="index.php?<?php echo build_query($baseQuery, ["sort" => "amount_desc"]); ?>#records-section">High to Low</a>
                           <a href="index.php?<?php echo build_query($baseQuery, ["sort" => "amount_asc"]); ?>#records-section">Low to High</a>
@@ -648,7 +647,7 @@ $baseQuery = [
                     <span class="th-with-menu">
                       <span>Date</span>
                       <details class="th-menu">
-                        <summary class="th-menu__summary" aria-label="Date sort">v</summary>
+                        <summary class="th-menu__summary" aria-label="Date sort"></summary>
                         <div class="th-menu__list">
                           <a href="index.php?<?php echo build_query($baseQuery, ["sort" => "date_new"]); ?>#records-section">New to Old</a>
                           <a href="index.php?<?php echo build_query($baseQuery, ["sort" => "date_old"]); ?>#records-section">Old to New</a>
@@ -660,7 +659,7 @@ $baseQuery = [
                     <span class="th-with-menu">
                       <span>Year-Month</span>
                       <details class="th-menu">
-                        <summary class="th-menu__summary" aria-label="Year-Month sort">v</summary>
+                        <summary class="th-menu__summary" aria-label="Year-Month sort"></summary>
                         <div class="th-menu__list">
                           <a href="index.php?<?php echo build_query($baseQuery, ["sort" => "month_year_new"]); ?>#records-section">New to Old</a>
                           <a href="index.php?<?php echo build_query($baseQuery, ["sort" => "month_year_old"]); ?>#records-section">Old to New</a>
@@ -693,7 +692,7 @@ $baseQuery = [
                       <td class="strong"><?php echo htmlspecialchars($r["name"]); ?></td>
                       <td><?php echo htmlspecialchars($typeLabel); ?></td>
                       <td><?php echo htmlspecialchars($r["barangay"] ?? ""); ?></td>
-                      <td class="mono col-amount">₱<?php echo number_format((float)$r["amount"], 2); ?></td>
+                      <td class="mono col-amount">â‚±<?php echo number_format((float)$r["amount"], 2); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($r["record_date"]); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($r["month_year"]); ?></td>
                       <td class="note"><?php echo htmlspecialchars($notesVal); ?></td>
@@ -713,7 +712,7 @@ $baseQuery = [
     </section>
 
     <footer class="footer">
-      <span class="muted">Local system • XAMPP (MySQL) • PHP</span>
+      <span class="muted">Local system â€¢ XAMPP (MySQL) â€¢ PHP</span>
     </footer>
 
   </div>

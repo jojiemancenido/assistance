@@ -322,6 +322,68 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "dele
   redirect_super_admin("success", "Account deleted successfully.", $extra);
 }
 
+if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "delete_record")) {
+  $token = $_POST["csrf_token"] ?? "";
+  $deleteRecordId = (int)($_POST["delete_record_id"] ?? 0);
+
+  $returnType = trim((string)($_POST["records_type"] ?? ""));
+  $returnBarangay = trim((string)($_POST["records_barangay"] ?? ""));
+  $returnSort = trim((string)($_POST["records_sort"] ?? "new"));
+  $returnQuery = build_sa_query([
+    "records_type" => $returnType,
+    "records_barangay" => $returnBarangay,
+    "records_sort" => $returnSort,
+  ]);
+  $extra = ($returnQuery !== "" ? ($returnQuery . "&") : "") . "#all-assistance-section";
+
+  if (!verify_csrf_token($token)) {
+    redirect_super_admin("error", "Invalid request token.", $extra);
+  }
+  if ($deleteRecordId <= 0) {
+    redirect_super_admin("error", "Invalid record selected.", $extra);
+  }
+
+  $nameStmt = $conn->prepare("SELECT name FROM records WHERE record_id = ? LIMIT 1");
+  if (!$nameStmt) {
+    redirect_super_admin("error", "Database error: " . $conn->error, $extra);
+  }
+  $nameStmt->bind_param("i", $deleteRecordId);
+  $nameStmt->execute();
+  $nameRs = $nameStmt->get_result();
+  $nameRow = $nameRs ? $nameRs->fetch_assoc() : null;
+  $nameStmt->close();
+  if (!$nameRow) {
+    redirect_super_admin("error", "Record not found.", $extra);
+  }
+
+  $recordName = trim((string)($nameRow["name"] ?? ""));
+
+  $deleteStmt = $conn->prepare("DELETE FROM records WHERE record_id = ? LIMIT 1");
+  if (!$deleteStmt) {
+    redirect_super_admin("error", "Database error: " . $conn->error, $extra);
+  }
+  $deleteStmt->bind_param("i", $deleteRecordId);
+  if (!$deleteStmt->execute()) {
+    $err = $deleteStmt->error;
+    $deleteStmt->close();
+    redirect_super_admin("error", "Failed deleting record: " . $err, $extra);
+  }
+  $affected = (int)$deleteStmt->affected_rows;
+  $deleteStmt->close();
+  if ($affected < 1) {
+    redirect_super_admin("error", "Record not found.", $extra);
+  }
+
+  audit_log(
+    "record_delete",
+    "Super admin deleted record #" . $deleteRecordId . " for \"" . $recordName . "\".",
+    $authUser !== "" ? $authUser : null,
+    $deleteRecordId
+  );
+
+  redirect_super_admin("success", "Record deleted successfully.", $extra);
+}
+
 $editUser = trim((string)($_GET["edit_user"] ?? ""));
 $editAccount = null;
 if ($editUser !== "") {
@@ -800,7 +862,7 @@ $saBaseQuery = [
                     <span class="sa-th-with-menu">
                       <span>Type</span>
                       <details class="sa-th-menu">
-                        <summary class="sa-th-menu__summary" aria-label="Type filter">v</summary>
+                        <summary class="sa-th-menu__summary" aria-label="Type filter"></summary>
                         <div class="sa-th-menu__list">
                           <a href="super_admin.php?<?php echo build_sa_query($saBaseQuery, ["records_type" => ""]); ?>#all-assistance-section">All Types</a>
                           <?php foreach ($orderedTypeLabels as $label): ?>
@@ -814,7 +876,7 @@ $saBaseQuery = [
                     <span class="sa-th-with-menu">
                       <span>Barangay</span>
                       <details class="sa-th-menu">
-                        <summary class="sa-th-menu__summary" aria-label="Barangay filter">v</summary>
+                        <summary class="sa-th-menu__summary" aria-label="Barangay filter"></summary>
                         <div class="sa-th-menu__list">
                           <a href="super_admin.php?<?php echo build_sa_query($saBaseQuery, ["records_barangay" => ""]); ?>#all-assistance-section">All Barangays</a>
                           <?php foreach ($saBarangays as $bName): ?>
@@ -830,7 +892,7 @@ $saBaseQuery = [
                     <span class="sa-th-with-menu">
                       <span>Amount</span>
                       <details class="sa-th-menu">
-                        <summary class="sa-th-menu__summary" aria-label="Amount sort">v</summary>
+                        <summary class="sa-th-menu__summary" aria-label="Amount sort"></summary>
                         <div class="sa-th-menu__list">
                           <a href="super_admin.php?<?php echo build_sa_query($saBaseQuery, ["records_sort" => "amount_desc"]); ?>#all-assistance-section">High to Low</a>
                           <a href="super_admin.php?<?php echo build_sa_query($saBaseQuery, ["records_sort" => "amount_asc"]); ?>#all-assistance-section">Low to High</a>
@@ -843,7 +905,7 @@ $saBaseQuery = [
                     <span class="sa-th-with-menu">
                       <span>Date</span>
                       <details class="sa-th-menu">
-                        <summary class="sa-th-menu__summary" aria-label="Date sort">v</summary>
+                        <summary class="sa-th-menu__summary" aria-label="Date sort"></summary>
                         <div class="sa-th-menu__list">
                           <a href="super_admin.php?<?php echo build_sa_query($saBaseQuery, ["records_sort" => "date_new"]); ?>#all-assistance-section">New to Old</a>
                           <a href="super_admin.php?<?php echo build_sa_query($saBaseQuery, ["records_sort" => "date_old"]); ?>#all-assistance-section">Old to New</a>
@@ -856,7 +918,7 @@ $saBaseQuery = [
                     <span class="sa-th-with-menu">
                       <span>Month-Year</span>
                       <details class="sa-th-menu">
-                        <summary class="sa-th-menu__summary" aria-label="Month-Year sort">v</summary>
+                        <summary class="sa-th-menu__summary" aria-label="Month-Year sort"></summary>
                         <div class="sa-th-menu__list">
                           <a href="super_admin.php?<?php echo build_sa_query($saBaseQuery, ["records_sort" => "month_year_new"]); ?>#all-assistance-section">New to Old</a>
                           <a href="super_admin.php?<?php echo build_sa_query($saBaseQuery, ["records_sort" => "month_year_old"]); ?>#all-assistance-section">Old to New</a>
@@ -866,6 +928,7 @@ $saBaseQuery = [
                     </span>
                   </th>
                   <th>Notes</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -892,10 +955,24 @@ $saBaseQuery = [
                       <td class="mono"><?php echo htmlspecialchars((string)($r["record_date"] ?? "")); ?></td>
                       <td class="mono"><?php echo htmlspecialchars((string)($r["month_year"] ?? "")); ?></td>
                       <td><?php echo htmlspecialchars($notesVal); ?></td>
+                      <td>
+                        <div class="account-action-group">
+                          <a class="btn btn--secondary btn--sm" href="edit.php?record_id=<?php echo urlencode((string)$r["record_id"]); ?>">Edit</a>
+                          <form method="POST" action="super_admin.php#all-assistance-section" class="inline-form" onsubmit="return confirm('Delete record #<?php echo htmlspecialchars(addslashes((string)$r["record_id"])); ?> for <?php echo htmlspecialchars(addslashes((string)$r["name"])); ?>?');">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+                            <input type="hidden" name="action" value="delete_record" />
+                            <input type="hidden" name="delete_record_id" value="<?php echo htmlspecialchars((string)$r["record_id"]); ?>" />
+                            <input type="hidden" name="records_type" value="<?php echo htmlspecialchars($saTypeFilter); ?>" />
+                            <input type="hidden" name="records_barangay" value="<?php echo htmlspecialchars($saBarangayFilter); ?>" />
+                            <input type="hidden" name="records_sort" value="<?php echo htmlspecialchars($saRecordsSort); ?>" />
+                            <button class="btn btn--sm btn--danger" type="submit">Delete</button>
+                          </form>
+                        </div>
+                      </td>
                     </tr>
                   <?php endwhile; ?>
                 <?php else: ?>
-                  <tr><td colspan="10" class="muted">No assistance records found.</td></tr>
+                  <tr><td colspan="11" class="muted">No assistance records found.</td></tr>
                 <?php endif; ?>
               </tbody>
             </table>

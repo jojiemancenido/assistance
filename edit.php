@@ -96,6 +96,8 @@ if ($hasTypeSpecify) {
   $typeSpecify = extract_specify_from_notes($notes);
 }
 
+$canDeleteRecord = is_super_admin();
+
 if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
   $barangays[] = $barangay;
 }
@@ -204,6 +206,9 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
 
           <div class="actions">
             <a class="btn btn--secondary" href="index.php">Cancel</a>
+            <?php if ($canDeleteRecord): ?>
+              <button class="btn btn--danger" type="submit" formaction="delete_record.php" formmethod="POST" formnovalidate onclick="return confirm('Delete this record permanently?');">Delete Record</button>
+            <?php endif; ?>
             <button class="btn" type="submit">Update Record</button>
           </div>
         </form>
