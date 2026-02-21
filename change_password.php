@@ -131,18 +131,84 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
           <div class="field">
             <label for="current_password">Current Password</label>
-            <input id="current_password" name="current_password" type="password" required />
+            <div class="password-field">
+              <input id="current_password" name="current_password" type="password" required />
+              <button
+                type="button"
+                class="password-toggle"
+                data-target="current_password"
+                data-visible="0"
+                aria-label="Show current password"
+                title="Show password"
+              >
+                <svg class="eye-icon eye-icon--open" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="3.25" />
+                </svg>
+                <svg class="eye-icon eye-icon--closed" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 3l18 18" />
+                  <path d="M9.7 9.8A3.2 3.2 0 0 0 9 12a3.3 3.3 0 0 0 5.2 2.7" />
+                  <path d="M5.2 7.4C3.6 8.7 2.5 10.6 2 12c1 2.1 4.3 6.5 10 6.5 2.1 0 3.9-.6 5.4-1.5" />
+                  <path d="M10.9 5.6c.4-.1.7-.1 1.1-.1 5.7 0 9 4.4 10 6.5-.4.9-1.1 2.1-2.1 3.2" />
+                </svg>
+                <span class="password-toggle__text">Show</span>
+              </button>
+            </div>
           </div>
 
           <div class="field">
             <label for="new_password">New Password</label>
-            <input id="new_password" name="new_password" type="password" required />
+            <div class="password-field">
+              <input id="new_password" name="new_password" type="password" required />
+              <button
+                type="button"
+                class="password-toggle"
+                data-target="new_password"
+                data-visible="0"
+                aria-label="Show new password"
+                title="Show password"
+              >
+                <svg class="eye-icon eye-icon--open" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="3.25" />
+                </svg>
+                <svg class="eye-icon eye-icon--closed" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 3l18 18" />
+                  <path d="M9.7 9.8A3.2 3.2 0 0 0 9 12a3.3 3.3 0 0 0 5.2 2.7" />
+                  <path d="M5.2 7.4C3.6 8.7 2.5 10.6 2 12c1 2.1 4.3 6.5 10 6.5 2.1 0 3.9-.6 5.4-1.5" />
+                  <path d="M10.9 5.6c.4-.1.7-.1 1.1-.1 5.7 0 9 4.4 10 6.5-.4.9-1.1 2.1-2.1 3.2" />
+                </svg>
+                <span class="password-toggle__text">Show</span>
+              </button>
+            </div>
             <div class="help">Minimum 8 characters.</div>
           </div>
 
           <div class="field">
             <label for="confirm_password">Confirm New Password</label>
-            <input id="confirm_password" name="confirm_password" type="password" required />
+            <div class="password-field">
+              <input id="confirm_password" name="confirm_password" type="password" required />
+              <button
+                type="button"
+                class="password-toggle"
+                data-target="confirm_password"
+                data-visible="0"
+                aria-label="Show confirm password"
+                title="Show password"
+              >
+                <svg class="eye-icon eye-icon--open" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" />
+                  <circle cx="12" cy="12" r="3.25" />
+                </svg>
+                <svg class="eye-icon eye-icon--closed" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 3l18 18" />
+                  <path d="M9.7 9.8A3.2 3.2 0 0 0 9 12a3.3 3.3 0 0 0 5.2 2.7" />
+                  <path d="M5.2 7.4C3.6 8.7 2.5 10.6 2 12c1 2.1 4.3 6.5 10 6.5 2.1 0 3.9-.6 5.4-1.5" />
+                  <path d="M10.9 5.6c.4-.1.7-.1 1.1-.1 5.7 0 9 4.4 10 6.5-.4.9-1.1 2.1-2.1 3.2" />
+                </svg>
+                <span class="password-toggle__text">Show</span>
+              </button>
+            </div>
           </div>
 
           <div class="actions">
@@ -152,5 +218,35 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
       </div>
     </section>
   </div>
+  <script>
+    (function () {
+      const toggleButtons = document.querySelectorAll('.password-toggle[data-target]');
+      if (!toggleButtons.length) return;
+
+      function updateButtonState(button, input, isVisible) {
+        button.dataset.visible = isVisible ? '1' : '0';
+        button.setAttribute('aria-label', isVisible ? 'Hide password' : 'Show password');
+        button.setAttribute('title', isVisible ? 'Hide password' : 'Show password');
+        const text = button.querySelector('.password-toggle__text');
+        if (text) {
+          text.textContent = isVisible ? 'Hide' : 'Show';
+        }
+      }
+
+      toggleButtons.forEach(function (button) {
+        const targetId = button.dataset.target || '';
+        const input = document.getElementById(targetId);
+        if (!input) return;
+
+        button.addEventListener('click', function () {
+          const willShow = input.type === 'password';
+          input.type = willShow ? 'text' : 'password';
+          updateButtonState(button, input, willShow);
+        });
+
+        updateButtonState(button, input, input.type !== 'password');
+      });
+    })();
+  </script>
 </body>
 </html>

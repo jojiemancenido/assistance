@@ -60,6 +60,43 @@ $msg = trim((string)($_GET['msg'] ?? ''));
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div id="startup-splash" class="startup-splash" aria-hidden="true">
+    <div class="startup-splash__inner">
+      <span class="startup-splash__ring" aria-hidden="true"></span>
+      <img class="startup-splash__logo" src="daet%20logo%20lgu.png" alt="Bayan ng Daet Logo" />
+      <p class="startup-splash__title">Bayan ng Daet</p>
+      <p class="startup-splash__sub">Camarines Norte</p>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var splash = document.getElementById('startup-splash');
+      if (!splash) return;
+
+      var minDuration = 900;
+      var startAt = Date.now();
+
+      function closeSplash() {
+        if (!splash || splash.dataset.done === '1') return;
+        splash.dataset.done = '1';
+        splash.classList.add('startup-splash--leave');
+        window.setTimeout(function () {
+          if (splash && splash.parentNode) {
+            splash.parentNode.removeChild(splash);
+          }
+        }, 420);
+      }
+
+      function scheduleClose() {
+        var elapsed = Date.now() - startAt;
+        var wait = Math.max(0, minDuration - elapsed);
+        window.setTimeout(closeSplash, wait);
+      }
+
+      window.addEventListener('load', scheduleClose, { once: true });
+      window.setTimeout(closeSplash, 1800);
+    })();
+  </script>
   <div class="auth-shell">
     <section class="card auth-card">
       <div class="card__header">

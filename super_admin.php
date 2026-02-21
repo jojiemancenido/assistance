@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once "auth.php";
 require_super_admin();
 require_once "db.php";
@@ -484,6 +484,157 @@ $logsCountRs = @$conn->query("SELECT COUNT(*) AS total_logs FROM auth_audit_logs
 if ($logsCountRs && $row = $logsCountRs->fetch_assoc()) {
   $totalLogs = (int)($row["total_logs"] ?? 0);
 }
+$barangayStats = [];
+$barangayRecordTotal = 0;
+$barangayTotalsRs = @$conn->query(
+  "SELECT TRIM(barangay) AS barangay_name, COUNT(*) AS total_records
+   FROM records
+   WHERE barangay IS NOT NULL AND TRIM(barangay) <> ''
+   GROUP BY TRIM(barangay)
+   ORDER BY total_records DESC, barangay_name ASC"
+);
+if ($barangayTotalsRs) {
+  while ($row = $barangayTotalsRs->fetch_assoc()) {
+    $barangayName = trim((string)($row["barangay_name"] ?? ""));
+    $barangayCount = (int)($row["total_records"] ?? 0);
+    if ($barangayName === "" || $barangayCount <= 0) continue;
+    $barangayStats[] = [
+      "name" => $barangayName,
+      "count" => $barangayCount,
+    ];
+    $barangayRecordTotal += $barangayCount;
+  }
+}
+if ($barangayRecordTotal > 0) {
+  foreach ($barangayStats as $idx => $entry) {
+    $barangayStats[$idx]["percentage"] = ((float)$entry["count"] / (float)$barangayRecordTotal) * 100.0;
+  }
+}
+$topBarangay = (!empty($barangayStats)) ? $barangayStats[0] : null;
+
+$chartPalette = [
+  "#2563eb",
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#f97316",
+  "#8b5cf6",
+  "#ef4444",
+  "#14b8a6",
+  "#84cc16",
+  "#ec4899",
+];
+
+$barangayAmountStats = [];
+$amountTotalForPercentage = 0.0;
+$barangayAmountRs = @$conn->query(
+  "SELECT TRIM(barangay) AS barangay_name, COALESCE(SUM(amount), 0) AS total_amount
+   FROM records
+   WHERE barangay IS NOT NULL AND TRIM(barangay) <> ''
+   GROUP BY TRIM(barangay)
+   ORDER BY total_amount DESC, barangay_name ASC"
+);
+if ($barangayAmountRs) {
+  while ($row = $barangayAmountRs->fetch_assoc()) {
+    $barangayName = trim((string)($row["barangay_name"] ?? ""));
+    $barangayAmount = (float)($row["total_amount"] ?? 0);
+    if ($barangayName === "" || $barangayAmount <= 0) continue;
+    $barangayAmountStats[] = [
+      "name" => $barangayName,
+      "amount" => $barangayAmount,
+    ];
+    $amountTotalForPercentage += $barangayAmount;
+  }
+}
+if ($amountTotalForPercentage > 0) {
+  foreach ($barangayAmountStats as $idx => $entry) {
+    $barangayAmountStats[$idx]["percentage"] = ((float)$entry["amount"] / (float)$amountTotalForPercentage) * 100.0;
+  }
+}
+$topAmountBarangay = (!empty($barangayAmountStats)) ? $barangayAmountStats[0] : null;
+
+$amountBarangayChartItems = $barangayAmountStats;
+$amountBarangaySliceLimit = 8;
+if (count($amountBarangayChartItems) > $amountBarangaySliceLimit) {
+  $head = array_slice($amountBarangayChartItems, 0, $amountBarangaySliceLimit - 1);
+  $tail = array_slice($amountBarangayChartItems, $amountBarangaySliceLimit - 1);
+  $othersAmount = 0.0;
+  $othersPct = 0.0;
+  foreach ($tail as $item) {
+    $othersAmount += (float)($item["amount"] ?? 0.0);
+    $othersPct += (float)($item["percentage"] ?? 0.0);
+  }
+  if ($othersAmount > 0) {
+    $head[] = [
+      "name" => "Others",
+      "amount" => $othersAmount,
+      "percentage" => $othersPct,
+    ];
+  }
+  $amountBarangayChartItems = $head;
+}
+
+$amountBarangayGradientParts = [];
+$amountBarangayCursor = 0.0;
+foreach ($amountBarangayChartItems as $idx => $item) {
+  $pct = (float)($item["percentage"] ?? 0.0);
+  $color = $chartPalette[$idx % count($chartPalette)];
+  $amountBarangayChartItems[$idx]["color"] = $color;
+  if ($pct <= 0) continue;
+
+  $start = $amountBarangayCursor;
+  $end = min(100.0, $start + $pct);
+  $amountBarangayGradientParts[] = $color . " " . number_format($start, 2, ".", "") . "% " . number_format($end, 2, ".", "") . "%";
+  $amountBarangayCursor = $end;
+}
+if ($amountBarangayCursor < 100.0 && !empty($amountBarangayGradientParts)) {
+  $amountBarangayGradientParts[] = "#dbeafe " . number_format($amountBarangayCursor, 2, ".", "") . "% 100%";
+}
+$amountBarangayDonutGradient = !empty($amountBarangayGradientParts)
+  ? ("conic-gradient(" . implode(", ", $amountBarangayGradientParts) . ")")
+  : "conic-gradient(#e2e8f0 0% 100%)";
+$barangayChartItems = $barangayStats;
+$barangaySliceLimit = 8;
+if (count($barangayChartItems) > $barangaySliceLimit) {
+  $head = array_slice($barangayChartItems, 0, $barangaySliceLimit - 1);
+  $tail = array_slice($barangayChartItems, $barangaySliceLimit - 1);
+  $othersCount = 0;
+  $othersPct = 0.0;
+  foreach ($tail as $item) {
+    $othersCount += (int)($item["count"] ?? 0);
+    $othersPct += (float)($item["percentage"] ?? 0.0);
+  }
+  if ($othersCount > 0) {
+    $head[] = [
+      "name" => "Others",
+      "count" => $othersCount,
+      "percentage" => $othersPct,
+    ];
+  }
+  $barangayChartItems = $head;
+}
+
+$barangayGradientParts = [];
+$barangayCursor = 0.0;
+foreach ($barangayChartItems as $idx => $item) {
+  $pct = (float)($item["percentage"] ?? 0.0);
+  $color = $chartPalette[$idx % count($chartPalette)];
+  $barangayChartItems[$idx]["color"] = $color;
+  if ($pct <= 0) continue;
+
+  $start = $barangayCursor;
+  $end = min(100.0, $start + $pct);
+  $barangayGradientParts[] = $color . " " . number_format($start, 2, ".", "") . "% " . number_format($end, 2, ".", "") . "%";
+  $barangayCursor = $end;
+}
+if ($barangayCursor < 100.0 && !empty($barangayGradientParts)) {
+  $barangayGradientParts[] = "#dbeafe " . number_format($barangayCursor, 2, ".", "") . "% 100%";
+}
+$barangayDonutGradient = !empty($barangayGradientParts)
+  ? ("conic-gradient(" . implode(", ", $barangayGradientParts) . ")")
+  : "conic-gradient(#e2e8f0 0% 100%)";
+
+
 
 $accountsSql = "SELECT
                   u.`user` AS username,
@@ -564,6 +715,51 @@ natcasesort($extraLabels);
 foreach ($extraLabels as $label) {
   $orderedTypeLabels[] = $label;
 }
+$typeTotalForPercentage = 0;
+foreach ($typeTotals as $countVal) {
+  $typeTotalForPercentage += (int)$countVal;
+}
+
+$typePercentages = [];
+$typeChartItems = [];
+foreach ($orderedTypeLabels as $idx => $label) {
+  $countVal = (int)($typeTotals[$label] ?? 0);
+  $pct = ($typeTotalForPercentage > 0) ? (($countVal / $typeTotalForPercentage) * 100.0) : 0.0;
+  $color = $chartPalette[$idx % count($chartPalette)];
+
+  $typePercentages[$label] = $pct;
+  $typeChartItems[] = [
+    "name" => $label,
+    "count" => $countVal,
+    "percentage" => $pct,
+    "color" => $color,
+  ];
+}
+$topTypeItem = null;
+foreach ($typeChartItems as $typeItem) {
+  if ($topTypeItem === null || (float)($typeItem["percentage"] ?? 0.0) > (float)($topTypeItem["percentage"] ?? 0.0)) {
+    $topTypeItem = $typeItem;
+  }
+}
+
+$typeGradientParts = [];
+$typeCursor = 0.0;
+foreach ($typeChartItems as $item) {
+  $pct = (float)($item["percentage"] ?? 0.0);
+  if ($pct <= 0) continue;
+
+  $start = $typeCursor;
+  $end = min(100.0, $start + $pct);
+  $typeGradientParts[] = (string)$item["color"] . " " . number_format($start, 2, ".", "") . "% " . number_format($end, 2, ".", "") . "%";
+  $typeCursor = $end;
+}
+if ($typeCursor < 100.0 && !empty($typeGradientParts)) {
+  $typeGradientParts[] = "#dbeafe " . number_format($typeCursor, 2, ".", "") . "% 100%";
+}
+$typeDonutGradient = !empty($typeGradientParts)
+  ? ("conic-gradient(" . implode(", ", $typeGradientParts) . ")")
+  : "conic-gradient(#e2e8f0 0% 100%)";
+
 
 $saAllowedSorts = [
   "new" => "record_id DESC",
@@ -652,6 +848,86 @@ $saBaseQuery = [
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="superadmin-page">
+  <div id="startup-splash" class="startup-splash" aria-hidden="true">
+    <div class="startup-splash__inner">
+      <span class="startup-splash__ring" aria-hidden="true"></span>
+      <img class="startup-splash__logo" src="daet%20logo%20lgu.png" alt="Bayan ng Daet Logo" />
+      <p class="startup-splash__title">Bayan ng Daet</p>
+      <p class="startup-splash__sub">Camarines Norte</p>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var splash = document.getElementById('startup-splash');
+      if (!splash) return;
+
+      var dashboardSwitchKey = 'startupSplashNextDashboard';
+
+      document.addEventListener('click', function (event) {
+        var target = event.target;
+        if (!target || !target.closest) return;
+        var link = target.closest('a[data-dashboard-switch="1"]');
+        if (!link) return;
+        try {
+          window.sessionStorage.setItem(dashboardSwitchKey, '1');
+        } catch (err) {}
+      });
+
+      function getNavigationType() {
+        var navEntries = window.performance && window.performance.getEntriesByType
+          ? window.performance.getEntriesByType('navigation')
+          : [];
+        if (navEntries && navEntries.length > 0 && navEntries[0].type) {
+          return navEntries[0].type;
+        }
+        if (window.performance && window.performance.navigation) {
+          return window.performance.navigation.type === 1 ? 'reload' : 'navigate';
+        }
+        return 'navigate';
+      }
+
+      var showByIntent = false;
+      try {
+        showByIntent = window.sessionStorage.getItem(dashboardSwitchKey) === '1';
+        if (showByIntent) {
+          window.sessionStorage.removeItem(dashboardSwitchKey);
+        }
+      } catch (err) {}
+
+      var isReload = getNavigationType() === 'reload';
+      var shouldShowSplash = isReload || showByIntent;
+
+      if (!shouldShowSplash) {
+        if (splash.parentNode) {
+          splash.parentNode.removeChild(splash);
+        }
+        return;
+      }
+
+      var minDuration = 900;
+      var startAt = Date.now();
+
+      function closeSplash() {
+        if (!splash || splash.dataset.done === '1') return;
+        splash.dataset.done = '1';
+        splash.classList.add('startup-splash--leave');
+        window.setTimeout(function () {
+          if (splash && splash.parentNode) {
+            splash.parentNode.removeChild(splash);
+          }
+        }, 420);
+      }
+
+      function scheduleClose() {
+        var elapsed = Date.now() - startAt;
+        var wait = Math.max(0, minDuration - elapsed);
+        window.setTimeout(closeSplash, wait);
+      }
+
+      window.addEventListener('load', scheduleClose, { once: true });
+      window.setTimeout(closeSplash, 1800);
+    })();
+  </script>
   <div class="app">
     <header class="app-header">
       <div class="brand-text">
@@ -660,7 +936,7 @@ $saBaseQuery = [
       </div>
       <div class="header-meta">
         <div class="user-chip">Role <strong>Super Admin</strong></div>
-        <a class="btn btn--secondary btn--sm" href="index.php">Dashboard</a>
+        <a class="btn btn--secondary btn--sm" href="index.php" data-dashboard-switch="1">Dashboard</a>
         <a class="btn btn--secondary btn--sm" href="logs.php">Logs</a>
       </div>
     </header>
@@ -671,19 +947,140 @@ $saBaseQuery = [
       </div>
     <?php endif; ?>
 
-    <section class="card">
+    <section class="card sa-global-stats">
       <div class="card__header">
         <h2 class="card__title">Global Statistics</h2>
-        <p class="card__sub">All accounts, records, and totals across the system.</p>
+        <p class="card__sub">Compact percentage view for barangay and assistance type distribution.</p>
       </div>
-      <div class="card__body">
-        <div class="type-grid">
-          <div class="type-stat"><div class="type-name">Total Accounts</div><div class="type-amount"><?php echo number_format($totalAccounts); ?></div></div>
-          <div class="type-stat"><div class="type-name">Active Accounts</div><div class="type-amount"><?php echo number_format($totalActiveUsers); ?></div></div>
-          <div class="type-stat"><div class="type-name">Total Assistance Records</div><div class="type-amount"><?php echo number_format($totalRecords); ?></div></div>
-          <div class="type-stat"><div class="type-name">Total Assistance Amount</div><div class="type-amount">PHP <?php echo number_format($totalAmount, 2); ?></div></div>
-          <div class="type-stat"><div class="type-name">Total Audit Logs</div><div class="type-amount"><?php echo number_format($totalLogs); ?></div></div>
-        </div>
+      <div class="card__body sa-global-stats__body">
+        <div class="sa-stats-layout">
+          <div class="sa-stats-left">
+            <div class="sa-distribution-card">
+              <div class="sa-distribution-card__head">
+                <h3>Barangay Record Percentage</h3>
+                <p><?php echo number_format($barangayRecordTotal); ?> record<?php echo ($barangayRecordTotal === 1 ? "" : "s"); ?> with barangay details.</p>
+              </div>
+              <?php if (!empty($barangayChartItems)): ?>
+                <div class="sa-donut-layout js-donut-interactive">
+                  <div class="sa-donut" style="--donut-fill: <?php echo htmlspecialchars($barangayDonutGradient, ENT_QUOTES); ?>;">
+                    <div class="sa-donut__center js-donut-center">
+                      <strong><?php echo number_format((int)$barangayRecordTotal); ?> record<?php echo ((int)$barangayRecordTotal === 1 ? "" : "s"); ?></strong>
+                      <small class="js-donut-mid">100.0%</small>
+                      <span class="js-donut-sub">All Barangays</span>
+                    </div>
+                  </div>
+                  <ul class="sa-legend-list">
+                    <?php foreach ($barangayChartItems as $item): ?>
+                      <li class="sa-legend-item" data-donut-top="<?php echo htmlspecialchars(number_format((int)($item["count"] ?? 0)) . " record" . (((int)($item["count"] ?? 0) === 1) ? "" : "s"), ENT_QUOTES); ?>" data-donut-mid="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 1) . "%", ENT_QUOTES); ?>" data-donut-bottom="<?php echo htmlspecialchars((string)($item["name"] ?? ""), ENT_QUOTES); ?>" data-donut-pct="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 4, ".", ""), ENT_QUOTES); ?>">
+                        <span class="sa-legend-swatch" style="--legend-color: <?php echo htmlspecialchars((string)($item["color"] ?? "#94a3b8"), ENT_QUOTES); ?>;"></span>
+                        <span class="sa-legend-name"><?php echo htmlspecialchars((string)($item["name"] ?? "")); ?></span>
+                        <span class="sa-legend-meta"><?php echo number_format((int)($item["count"] ?? 0)); ?> (<?php echo number_format((float)($item["percentage"] ?? 0.0), 1); ?>%)</span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </div>
+              <?php else: ?>
+                <p class="muted">No barangay statistics available yet.</p>
+              <?php endif; ?>
+            </div>
+
+            <div class="sa-distribution-card">
+              <div class="sa-distribution-card__head">
+                <h3>Assistance Type Percentage</h3>
+                <p><?php echo number_format($typeTotalForPercentage); ?> total type-tagged record<?php echo ($typeTotalForPercentage === 1 ? "" : "s"); ?>.</p>
+              </div>
+              <?php if (!empty($typeChartItems)): ?>
+                <div class="sa-donut-layout js-donut-interactive">
+                  <div class="sa-donut" style="--donut-fill: <?php echo htmlspecialchars($typeDonutGradient, ENT_QUOTES); ?>;">
+                    <div class="sa-donut__center js-donut-center">
+                      <strong><?php echo number_format((int)$typeTotalForPercentage); ?> record<?php echo ((int)$typeTotalForPercentage === 1 ? "" : "s"); ?></strong>
+                      <small class="js-donut-mid">100.0%</small>
+                      <span class="js-donut-sub">All Types</span>
+                    </div>
+                  </div>
+                  <ul class="sa-legend-list">
+                    <?php foreach ($typeChartItems as $item): ?>
+                      <li class="sa-legend-item" data-donut-top="<?php echo htmlspecialchars(number_format((int)($item["count"] ?? 0)) . " record" . (((int)($item["count"] ?? 0) === 1) ? "" : "s"), ENT_QUOTES); ?>" data-donut-mid="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 1) . "%", ENT_QUOTES); ?>" data-donut-bottom="<?php echo htmlspecialchars((string)($item["name"] ?? ""), ENT_QUOTES); ?>" data-donut-pct="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 4, ".", ""), ENT_QUOTES); ?>">
+                        <span class="sa-legend-swatch" style="--legend-color: <?php echo htmlspecialchars((string)($item["color"] ?? "#94a3b8"), ENT_QUOTES); ?>;"></span>
+                        <span class="sa-legend-name"><?php echo htmlspecialchars((string)($item["name"] ?? "")); ?></span>
+                        <span class="sa-legend-meta"><?php echo number_format((int)($item["count"] ?? 0)); ?> (<?php echo number_format((float)($item["percentage"] ?? 0.0), 1); ?>%)</span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </div>
+              <?php else: ?>
+                <p class="muted">No assistance type statistics available yet.</p>
+              <?php endif; ?>
+            </div>
+          </div>
+          <div class="sa-stats-right">
+            <section class="sa-summary-panel sa-summary-panel--accent">
+              <div class="sa-summary-panel__label">Top Barangay</div>
+              <?php if ($topBarangay): ?>
+                <div class="sa-summary-panel__value"><?php echo htmlspecialchars((string)$topBarangay["name"]); ?></div>
+                <div class="sa-summary-panel__meta">
+                  <?php echo number_format((int)$topBarangay["count"]); ?> records
+                  (<?php echo number_format((float)($topBarangay["percentage"] ?? 0.0), 1); ?>%)
+                </div>
+              <?php else: ?>
+                <div class="sa-summary-panel__value">-</div>
+                <div class="sa-summary-panel__meta">No barangay data yet</div>
+              <?php endif; ?>
+            </section>
+
+            <section class="sa-summary-panel sa-summary-panel--amount">
+              <div class="sa-summary-panel__head">
+                <h3>Total Amount</h3>
+                <p>Barangay share by assistance amount.</p>
+              </div>
+              <div class="sa-summary-panel__value">PHP <?php echo number_format($totalAmount, 2); ?></div>
+              <?php if (!empty($amountBarangayChartItems)): ?>
+                <div class="sa-donut-layout sa-donut-layout--compact js-donut-interactive">
+                  <div class="sa-donut" style="--donut-fill: <?php echo htmlspecialchars($amountBarangayDonutGradient, ENT_QUOTES); ?>;">
+                    <div class="sa-donut__center js-donut-center">
+                      <strong>PHP <?php echo number_format((float)$totalAmount, 2); ?></strong>
+                      <small class="js-donut-mid">100.0%</small>
+                      <span class="js-donut-sub">All Barangays</span>
+                    </div>
+                  </div>
+                  <ul class="sa-legend-list sa-legend-list--compact">
+                    <?php foreach ($amountBarangayChartItems as $item): ?>
+                      <li class="sa-legend-item" data-donut-top="<?php echo htmlspecialchars("PHP " . number_format((float)($item["amount"] ?? 0.0), 2), ENT_QUOTES); ?>" data-donut-mid="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 1) . "%", ENT_QUOTES); ?>" data-donut-bottom="<?php echo htmlspecialchars((string)($item["name"] ?? ""), ENT_QUOTES); ?>" data-donut-pct="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 4, ".", ""), ENT_QUOTES); ?>">
+                        <span class="sa-legend-swatch" style="--legend-color: <?php echo htmlspecialchars((string)($item["color"] ?? "#94a3b8"), ENT_QUOTES); ?>;"></span>
+                        <span class="sa-legend-name"><?php echo htmlspecialchars((string)($item["name"] ?? "")); ?></span>
+                        <span class="sa-legend-meta">PHP <?php echo number_format((float)($item["amount"] ?? 0.0), 2); ?> (<?php echo number_format((float)($item["percentage"] ?? 0.0), 1); ?>%)</span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </div>
+              <?php else: ?>
+                <p class="muted">No barangay amount statistics available yet.</p>
+              <?php endif; ?>
+            </section>
+
+            <section class="sa-summary-panel sa-summary-panel--accounts">
+              <div class="sa-summary-panel__head">
+                <h3>Accounts</h3>
+                <p>Account records and currently active users.</p>
+              </div>
+              <div class="sa-account-metrics">
+                <div class="sa-account-metric">
+                  <span class="sa-account-metric__label">Account Records</span>
+                  <strong class="sa-account-metric__value"><?php echo number_format($totalAccounts); ?></strong>
+                </div>
+                <div class="sa-account-metric">
+                  <span class="sa-account-metric__label">Active Accounts</span>
+                  <strong class="sa-account-metric__value"><?php echo number_format($totalActiveUsers); ?></strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="sa-summary-panel">
+              <div class="sa-summary-panel__label">Audit Logs</div>
+              <div class="sa-summary-panel__value"><?php echo number_format($totalLogs); ?></div>
+            </section>
+          </div>
+</div>
       </div>
     </section>
 
@@ -905,7 +1302,7 @@ $saBaseQuery = [
           <?php foreach ($orderedTypeLabels as $label): ?>
             <div class="type-stat">
               <div class="type-name"><?php echo htmlspecialchars($label); ?></div>
-              <div class="type-count"><?php echo number_format((float)($typeTotals[$label] ?? 0)); ?> records</div>
+              <div class="type-count"><?php echo number_format((float)($typeTotals[$label] ?? 0)); ?> records (<?php echo number_format((float)($typePercentages[$label] ?? 0.0), 1); ?>%)</div>
             </div>
           <?php endforeach; ?>
         </div>
@@ -1068,11 +1465,185 @@ $saBaseQuery = [
       </div>
     </section>
   </div>
+      <script>
+    (function () {
+      var groups = document.querySelectorAll('.js-donut-interactive');
+      if (!groups.length) return;
+
+      groups.forEach(function (group) {
+        var donut = group.querySelector('.sa-donut');
+        var center = group.querySelector('.js-donut-center');
+        if (!donut || !center) return;
+
+        var topEl = center.querySelector('strong');
+        var midEl = center.querySelector('.js-donut-mid');
+        var bottomEl = center.querySelector('.js-donut-sub');
+        var items = Array.prototype.slice.call(group.querySelectorAll('.sa-legend-item[data-donut-top][data-donut-mid][data-donut-bottom][data-donut-pct]'));
+        if (!topEl || !midEl || !bottomEl || !items.length) return;
+
+        var defaultTop = (topEl.textContent || '').trim();
+        var defaultMid = (midEl.textContent || '').trim();
+        var defaultBottom = (bottomEl.textContent || '').trim();
+        var lockedIndex = -1;
+        var currentIndex = -1;
+
+        var ranges = [];
+        var cursor = 0;
+        items.forEach(function (item, index) {
+          var pct = parseFloat(item.getAttribute('data-donut-pct') || '0');
+          if (!isFinite(pct) || pct <= 0) {
+            ranges.push({ index: index, start: cursor, end: cursor });
+            return;
+          }
+          var end = Math.min(100, cursor + pct);
+          ranges.push({ index: index, start: cursor, end: end });
+          cursor = end;
+        });
+
+        function fitCenterText() {
+          var baseTop = parseFloat(center.dataset.baseTop || '');
+          var baseMid = parseFloat(center.dataset.baseMid || '');
+          var baseBottom = parseFloat(center.dataset.baseBottom || '');
+
+          if (!isFinite(baseTop)) {
+            baseTop = parseFloat(window.getComputedStyle(topEl).fontSize) || 22;
+            center.dataset.baseTop = String(baseTop);
+          }
+          if (!isFinite(baseMid)) {
+            baseMid = parseFloat(window.getComputedStyle(midEl).fontSize) || 12;
+            center.dataset.baseMid = String(baseMid);
+          }
+          if (!isFinite(baseBottom)) {
+            baseBottom = parseFloat(window.getComputedStyle(bottomEl).fontSize) || 10;
+            center.dataset.baseBottom = String(baseBottom);
+          }
+
+          topEl.style.fontSize = baseTop + 'px';
+          midEl.style.fontSize = baseMid + 'px';
+          bottomEl.style.fontSize = baseBottom + 'px';
+
+          var maxWidth = Math.max(70, center.clientWidth - 6);
+          var maxHeight = Math.max(62, center.clientHeight - 6);
+          var guard = 0;
+
+          while (guard < 32 && (
+            topEl.scrollWidth > maxWidth ||
+            midEl.scrollWidth > maxWidth ||
+            bottomEl.scrollWidth > maxWidth ||
+            center.scrollHeight > maxHeight
+          )) {
+            var topSize = parseFloat(topEl.style.fontSize);
+            var midSize = parseFloat(midEl.style.fontSize);
+            var bottomSize = parseFloat(bottomEl.style.fontSize);
+
+            if (isFinite(topSize) && topSize > 12) topEl.style.fontSize = (topSize - 0.6) + 'px';
+            if (isFinite(midSize) && midSize > 9) midEl.style.fontSize = (midSize - 0.35) + 'px';
+            if (isFinite(bottomSize) && bottomSize > 8) bottomEl.style.fontSize = (bottomSize - 0.3) + 'px';
+
+            guard += 1;
+          }
+        }
+
+        function setCenter(top, mid, bottom) {
+          var nextTop = top || defaultTop;
+          var nextMid = mid || defaultMid;
+          var nextBottom = bottom || defaultBottom;
+          if (topEl.textContent === nextTop && midEl.textContent === nextMid && bottomEl.textContent === nextBottom) return;
+          topEl.textContent = nextTop;
+          midEl.textContent = nextMid;
+          bottomEl.textContent = nextBottom;
+          fitCenterText();
+        }
+
+        function setActive(index) {
+          items.forEach(function (item, i) {
+            item.classList.toggle('is-active', i === index);
+          });
+        }
+
+        function preview(index) {
+          var item = items[index];
+          if (!item) return;
+          currentIndex = index;
+          setCenter(
+            item.getAttribute('data-donut-top') || defaultTop,
+            item.getAttribute('data-donut-mid') || defaultMid,
+            item.getAttribute('data-donut-bottom') || defaultBottom
+          );
+          setActive(index);
+        }
+
+        function resetToDefault() {
+          currentIndex = -1;
+          setCenter(defaultTop, defaultMid, defaultBottom);
+          setActive(-1);
+        }
+
+        function indexFromPointer(event) {
+          var rect = donut.getBoundingClientRect();
+          var cx = rect.left + (rect.width / 2);
+          var cy = rect.top + (rect.height / 2);
+          var dx = event.clientX - cx;
+          var dy = event.clientY - cy;
+          var radius = Math.sqrt((dx * dx) + (dy * dy));
+          var outer = rect.width / 2;
+          var inner = outer * 0.74;
+
+          if (radius < inner || radius > outer) return -1;
+
+          var deg = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+          var pctPos = (deg / 360) * 100;
+
+          for (var i = 0; i < ranges.length; i++) {
+            var range = ranges[i];
+            if (range.end <= range.start) continue;
+            if (pctPos >= range.start && pctPos < range.end) return range.index;
+          }
+
+          return -1;
+        }
+
+        donut.addEventListener('mousemove', function (event) {
+          if (lockedIndex !== -1) return;
+          var idx = indexFromPointer(event);
+          if (idx === currentIndex) return;
+          if (idx === -1) resetToDefault(); else preview(idx);
+        });
+
+        donut.addEventListener('mouseleave', function () {
+          if (lockedIndex === -1) resetToDefault(); else preview(lockedIndex);
+        });
+
+        donut.addEventListener('click', function (event) {
+          var idx = indexFromPointer(event);
+          if (idx === -1) {
+            lockedIndex = -1;
+            resetToDefault();
+            return;
+          }
+          if (lockedIndex === idx) {
+            lockedIndex = -1;
+            resetToDefault();
+          } else {
+            lockedIndex = idx;
+            preview(idx);
+          }
+        });
+
+        var resizeTimer = null;
+        window.addEventListener('resize', function () {
+          window.clearTimeout(resizeTimer);
+          resizeTimer = window.setTimeout(function () {
+            if (lockedIndex !== -1) preview(lockedIndex);
+            else if (currentIndex !== -1) preview(currentIndex);
+            else fitCenterText();
+          }, 120);
+        });
+
+        fitCenterText();
+      });
+    })();
+  </script>
 </body>
 </html>
-
-
-
-
-
 

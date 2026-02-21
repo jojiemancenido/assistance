@@ -13,7 +13,7 @@ $barangays = [
   "Barangay 3 (Bagumbayan)",
   "Barangay 4 (Mantagbac)",
   "Barangay 5 (Pandan)",
-  "Barangay 6 (Centro Occidental)",
+  "Barangay 6 (Centro)",
   "Barangay 7 (Centro Oriental)",
   "Barangay 8 (Salcedo)",
   "Alawihao",
@@ -184,6 +184,47 @@ natcasesort($extraLabels);
 foreach ($extraLabels as $label) {
   $orderedTypeLabels[] = $label;
 }
+$summaryTypePalette = [
+  "#2563eb",
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#f97316",
+  "#8b5cf6",
+  "#ef4444",
+  "#14b8a6",
+];
+$summaryTypeTotal = 0;
+foreach ($orderedTypeLabels as $label) {
+  $summaryTypeTotal += (int)($typeTotals[$label]["count"] ?? 0);
+}
+$summaryTypeChartItems = [];
+$summaryTypeGradientParts = [];
+$summaryTypeCursor = 0.0;
+foreach ($orderedTypeLabels as $idx => $label) {
+  $countVal = (int)($typeTotals[$label]["count"] ?? 0);
+  $pct = ($summaryTypeTotal > 0) ? (($countVal / $summaryTypeTotal) * 100.0) : 0.0;
+  $color = $summaryTypePalette[$idx % count($summaryTypePalette)];
+
+  $summaryTypeChartItems[] = [
+    "label" => $label,
+    "count" => $countVal,
+    "percentage" => $pct,
+    "color" => $color,
+  ];
+
+  if ($pct <= 0) continue;
+  $start = $summaryTypeCursor;
+  $end = min(100.0, $start + $pct);
+  $summaryTypeGradientParts[] = $color . " " . number_format($start, 2, ".", "") . "% " . number_format($end, 2, ".", "") . "%";
+  $summaryTypeCursor = $end;
+}
+if ($summaryTypeCursor < 100.0 && !empty($summaryTypeGradientParts)) {
+  $summaryTypeGradientParts[] = "#dbeafe " . number_format($summaryTypeCursor, 2, ".", "") . "% 100%";
+}
+$summaryTypeDonutGradient = !empty($summaryTypeGradientParts)
+  ? ("conic-gradient(" . implode(", ", $summaryTypeGradientParts) . ")")
+  : "conic-gradient(#e2e8f0 0% 100%)";
 
 // Records list: search + filter + sort
 $typeSortExpr = "type";
@@ -288,6 +329,86 @@ $baseQuery = [
 </head>
 
 <body>
+  <div id="startup-splash" class="startup-splash" aria-hidden="true">
+    <div class="startup-splash__inner">
+      <span class="startup-splash__ring" aria-hidden="true"></span>
+      <img class="startup-splash__logo" src="daet%20logo%20lgu.png" alt="Bayan ng Daet Logo" />
+      <p class="startup-splash__title">Bayan ng Daet</p>
+      <p class="startup-splash__sub">Camarines Norte</p>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var splash = document.getElementById('startup-splash');
+      if (!splash) return;
+
+      var dashboardSwitchKey = 'startupSplashNextDashboard';
+
+      document.addEventListener('click', function (event) {
+        var target = event.target;
+        if (!target || !target.closest) return;
+        var link = target.closest('a[data-dashboard-switch="1"]');
+        if (!link) return;
+        try {
+          window.sessionStorage.setItem(dashboardSwitchKey, '1');
+        } catch (err) {}
+      });
+
+      function getNavigationType() {
+        var navEntries = window.performance && window.performance.getEntriesByType
+          ? window.performance.getEntriesByType('navigation')
+          : [];
+        if (navEntries && navEntries.length > 0 && navEntries[0].type) {
+          return navEntries[0].type;
+        }
+        if (window.performance && window.performance.navigation) {
+          return window.performance.navigation.type === 1 ? 'reload' : 'navigate';
+        }
+        return 'navigate';
+      }
+
+      var showByIntent = false;
+      try {
+        showByIntent = window.sessionStorage.getItem(dashboardSwitchKey) === '1';
+        if (showByIntent) {
+          window.sessionStorage.removeItem(dashboardSwitchKey);
+        }
+      } catch (err) {}
+
+      var isReload = getNavigationType() === 'reload';
+      var shouldShowSplash = isReload || showByIntent;
+
+      if (!shouldShowSplash) {
+        if (splash.parentNode) {
+          splash.parentNode.removeChild(splash);
+        }
+        return;
+      }
+
+      var minDuration = 900;
+      var startAt = Date.now();
+
+      function closeSplash() {
+        if (!splash || splash.dataset.done === '1') return;
+        splash.dataset.done = '1';
+        splash.classList.add('startup-splash--leave');
+        window.setTimeout(function () {
+          if (splash && splash.parentNode) {
+            splash.parentNode.removeChild(splash);
+          }
+        }, 420);
+      }
+
+      function scheduleClose() {
+        var elapsed = Date.now() - startAt;
+        var wait = Math.max(0, minDuration - elapsed);
+        window.setTimeout(closeSplash, wait);
+      }
+
+      window.addEventListener('load', scheduleClose, { once: true });
+      window.setTimeout(closeSplash, 1800);
+    })();
+  </script>
   <div class="app">
 
     <header class="app-header">
@@ -318,7 +439,7 @@ $baseQuery = [
             Active Users
             <strong><?php echo htmlspecialchars((string)$activeUsersCount); ?></strong>
           </div>
-          <a class="btn btn--secondary btn--sm" href="super_admin.php">Super Admin</a>
+          <a class="btn btn--secondary btn--sm" href="super_admin.php" data-dashboard-switch="1">Super Admin</a>
         <?php endif; ?>
         <details class="account-menu">
           <summary class="btn btn--secondary btn--sm account-menu__summary">
@@ -496,13 +617,35 @@ $baseQuery = [
             <p class="card__sub">Count per assistance type.</p>
           </div>
           <div class="card__body">
-            <div id="summary-type-grid" class="type-grid">
-              <?php foreach ($orderedTypeLabels as $label): ?>
-                <div class="type-stat">
-                  <div class="type-name"><?php echo htmlspecialchars($label); ?></div>
-                  <div class="type-count"><?php echo number_format((float)($typeTotals[$label]["count"] ?? 0)); ?> records</div>
+            <div id="summary-type-grid" class="dashboard-summary-type">
+              <?php if ($summaryTypeTotal > 0): ?>
+                <div class="dashboard-summary-type__layout js-donut-interactive">
+                  <div class="dashboard-donut" style="--dash-donut-fill: <?php echo htmlspecialchars($summaryTypeDonutGradient, ENT_QUOTES); ?>;">
+                    <div class="dashboard-donut__center js-donut-center">
+                      <strong><?php echo number_format((int)$summaryTypeTotal); ?> record<?php echo ((int)$summaryTypeTotal === 1 ? "" : "s"); ?></strong>
+                      <small class="js-donut-mid">100.0%</small>
+                      <span class="js-donut-sub">All Types</span>
+                    </div>
+                  </div>
+                  <div class="dashboard-donut__legend">
+                    <?php foreach ($summaryTypeChartItems as $item): ?>
+                      <div
+                        class="dashboard-donut__item"
+                        data-donut-top="<?php echo htmlspecialchars(number_format((int)($item["count"] ?? 0)) . " record" . (((int)($item["count"] ?? 0) === 1) ? "" : "s"), ENT_QUOTES); ?>"
+                        data-donut-mid="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 1) . "%", ENT_QUOTES); ?>"
+                        data-donut-bottom="<?php echo htmlspecialchars((string)($item["label"] ?? ""), ENT_QUOTES); ?>"
+                        data-donut-pct="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 4, ".", ""), ENT_QUOTES); ?>"
+                      >
+                        <span class="dashboard-donut__swatch" style="--dash-swatch: <?php echo htmlspecialchars((string)$item["color"], ENT_QUOTES); ?>;"></span>
+                        <span class="dashboard-donut__name"><?php echo htmlspecialchars((string)$item["label"]); ?></span>
+                        <span class="dashboard-donut__meta"><?php echo number_format((int)$item["count"]); ?> (<?php echo number_format((float)$item["percentage"], 1); ?>%)</span>
+                      </div>
+                    <?php endforeach; ?>
+                  </div>
                 </div>
-              <?php endforeach; ?>
+              <?php else: ?>
+                <div class="muted">No summary data.</div>
+              <?php endif; ?>
             </div>
           </div>
         </section>
@@ -1028,21 +1171,260 @@ $baseQuery = [
           .replace(/\"/g, '&quot;')
           .replace(/'/g, '&#039;');
       }
+      function escapeAttr(value){
+        return escapeHtml(value).replace(/`/g, '&#096;');
+      }
+      const donutBound = new WeakSet();
+      function initInteractiveDonuts(scope){
+        const root = scope || document;
+        const groups = root.querySelectorAll('.js-donut-interactive');
+        if (!groups.length) return;
+
+        groups.forEach(function(group){
+          if (donutBound.has(group)) return;
+          donutBound.add(group);
+
+          const donut = group.querySelector('.dashboard-donut');
+          const center = group.querySelector('.js-donut-center');
+          if (!donut || !center) return;
+
+          const topEl = center.querySelector('strong');
+          const midEl = center.querySelector('.js-donut-mid');
+          const bottomEl = center.querySelector('.js-donut-sub');
+          const items = Array.prototype.slice.call(group.querySelectorAll('.dashboard-donut__item[data-donut-top][data-donut-mid][data-donut-bottom][data-donut-pct]'));
+          if (!topEl || !midEl || !bottomEl || !items.length) return;
+
+          const defaultTop = (topEl.textContent || '').trim();
+          const defaultMid = (midEl.textContent || '').trim();
+          const defaultBottom = (bottomEl.textContent || '').trim();
+          let lockedIndex = -1;
+          let currentIndex = -1;
+
+          let cursor = 0;
+          const ranges = items.map(function(item, index){
+            const pct = parseFloat(item.getAttribute('data-donut-pct') || '0');
+            if (!isFinite(pct) || pct <= 0) {
+              return { index: index, start: cursor, end: cursor };
+            }
+            const end = Math.min(100, cursor + pct);
+            const segment = { index: index, start: cursor, end: end };
+            cursor = end;
+            return segment;
+          });
+
+          function fitCenterText(){
+            let baseTop = parseFloat(center.dataset.baseTop || '');
+            let baseMid = parseFloat(center.dataset.baseMid || '');
+            let baseBottom = parseFloat(center.dataset.baseBottom || '');
+
+            if (!isFinite(baseTop)) {
+              baseTop = parseFloat(window.getComputedStyle(topEl).fontSize) || 24;
+              center.dataset.baseTop = String(baseTop);
+            }
+            if (!isFinite(baseMid)) {
+              baseMid = parseFloat(window.getComputedStyle(midEl).fontSize) || 13;
+              center.dataset.baseMid = String(baseMid);
+            }
+            if (!isFinite(baseBottom)) {
+              baseBottom = parseFloat(window.getComputedStyle(bottomEl).fontSize) || 11;
+              center.dataset.baseBottom = String(baseBottom);
+            }
+
+            topEl.style.fontSize = baseTop + 'px';
+            midEl.style.fontSize = baseMid + 'px';
+            bottomEl.style.fontSize = baseBottom + 'px';
+
+            const maxWidth = Math.max(76, center.clientWidth - 4);
+            const maxHeight = Math.max(68, center.clientHeight - 6);
+            let guard = 0;
+
+            while (guard < 36 && (
+              topEl.scrollWidth > maxWidth ||
+              midEl.scrollWidth > maxWidth ||
+              bottomEl.scrollWidth > maxWidth ||
+              center.scrollHeight > maxHeight
+            )) {
+              const topSize = parseFloat(topEl.style.fontSize);
+              const midSize = parseFloat(midEl.style.fontSize);
+              const bottomSize = parseFloat(bottomEl.style.fontSize);
+
+              if (isFinite(topSize) && topSize > 12) topEl.style.fontSize = (topSize - 0.6) + 'px';
+              if (isFinite(midSize) && midSize > 9) midEl.style.fontSize = (midSize - 0.35) + 'px';
+              if (isFinite(bottomSize) && bottomSize > 8) bottomEl.style.fontSize = (bottomSize - 0.3) + 'px';
+              guard += 1;
+            }
+          }
+
+          function setCenter(top, mid, bottom){
+            const nextTop = top || defaultTop;
+            const nextMid = mid || defaultMid;
+            const nextBottom = bottom || defaultBottom;
+            if (topEl.textContent === nextTop && midEl.textContent === nextMid && bottomEl.textContent === nextBottom) return;
+            topEl.textContent = nextTop;
+            midEl.textContent = nextMid;
+            bottomEl.textContent = nextBottom;
+            fitCenterText();
+          }
+
+          function setActive(index){
+            items.forEach(function(item, i){
+              item.classList.toggle('is-active', i === index);
+            });
+          }
+
+          function preview(index){
+            const item = items[index];
+            if (!item) return;
+            currentIndex = index;
+            setCenter(
+              item.getAttribute('data-donut-top') || defaultTop,
+              item.getAttribute('data-donut-mid') || defaultMid,
+              item.getAttribute('data-donut-bottom') || defaultBottom
+            );
+            setActive(index);
+          }
+
+          function resetToDefault(){
+            currentIndex = -1;
+            setCenter(defaultTop, defaultMid, defaultBottom);
+            setActive(-1);
+          }
+
+          function indexFromPointer(event){
+            const rect = donut.getBoundingClientRect();
+            const cx = rect.left + (rect.width / 2);
+            const cy = rect.top + (rect.height / 2);
+            const dx = event.clientX - cx;
+            const dy = event.clientY - cy;
+            const radius = Math.sqrt((dx * dx) + (dy * dy));
+            const outer = rect.width / 2;
+            const inner = outer * 0.73;
+
+            if (radius < inner || radius > outer) return -1;
+
+            const deg = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360;
+            const pctPos = (deg / 360) * 100;
+
+            for (let i = 0; i < ranges.length; i += 1) {
+              const range = ranges[i];
+              if (range.end <= range.start) continue;
+              if (pctPos >= range.start && pctPos < range.end) return range.index;
+            }
+            return -1;
+          }
+
+          donut.addEventListener('mousemove', function(event){
+            if (lockedIndex !== -1) return;
+            const idx = indexFromPointer(event);
+            if (idx === currentIndex) return;
+            if (idx === -1) resetToDefault(); else preview(idx);
+          });
+
+          donut.addEventListener('mouseleave', function(){
+            if (lockedIndex === -1) resetToDefault(); else preview(lockedIndex);
+          });
+
+          donut.addEventListener('click', function(event){
+            const idx = indexFromPointer(event);
+            if (idx === -1) {
+              lockedIndex = -1;
+              resetToDefault();
+              return;
+            }
+            if (lockedIndex === idx) {
+              lockedIndex = -1;
+              resetToDefault();
+            } else {
+              lockedIndex = idx;
+              preview(idx);
+            }
+          });
+
+          let resizeTimer = null;
+          window.addEventListener('resize', function(){
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(function(){
+              if (lockedIndex !== -1) preview(lockedIndex);
+              else if (currentIndex !== -1) preview(currentIndex);
+              else fitCenterText();
+            }, 120);
+          });
+
+          fitCenterText();
+        });
+      }
       function renderSummaryTypes(items){
         if (!summaryTypeGridEl) return;
         if (!Array.isArray(items) || items.length === 0) {
           summaryTypeGridEl.innerHTML = '<div class="muted">No summary data.</div>';
           return;
         }
-        const rows = items.map(function(item){
-          const label = escapeHtml(item.label);
-          const count = numberFmt.format(Number(item.count || 0));
-          return '<div class="type-stat">' +
-            '<div class="type-name">' + label + '</div>' +
-            '<div class="type-count">' + count + ' records</div>' +
+
+        const palette = ['#2563eb', '#0ea5e9', '#10b981', '#f59e0b', '#f97316', '#8b5cf6', '#ef4444', '#14b8a6'];
+        let total = 0;
+        items.forEach(function(item){
+          total += Number(item.count || 0);
+        });
+
+        if (!Number.isFinite(total) || total <= 0) {
+          summaryTypeGridEl.innerHTML = '<div class="muted">No summary data.</div>';
+          return;
+        }
+
+        const mapped = items.map(function(item, idx){
+          const count = Number(item.count || 0);
+          const percent = (count / total) * 100;
+          const labelRaw = String(item.label ?? '');
+          return {
+            label: escapeHtml(labelRaw),
+            labelAttr: escapeAttr(labelRaw),
+            count: count,
+            countText: numberFmt.format(count),
+            percent: percent,
+            percentText: percent.toFixed(1),
+            color: palette[idx % palette.length]
+          };
+        });
+
+        let cursor = 0;
+        const gradientParts = [];
+        mapped.forEach(function(item){
+          if (item.percent <= 0) return;
+          const start = cursor;
+          const end = Math.min(100, start + item.percent);
+          gradientParts.push(item.color + ' ' + start.toFixed(2) + '% ' + end.toFixed(2) + '%');
+          cursor = end;
+        });
+
+        if (cursor < 100 && gradientParts.length > 0) {
+          gradientParts.push('#dbeafe ' + cursor.toFixed(2) + '% 100%');
+        }
+
+        const donutFill = gradientParts.length > 0
+          ? 'conic-gradient(' + gradientParts.join(', ') + ')'
+          : 'conic-gradient(#e2e8f0 0% 100%)';
+
+        const legend = mapped.map(function(item){
+          return '<div class="dashboard-donut__item" data-donut-top="' + item.countText + ' record' + (item.count === 1 ? '' : 's') + '" data-donut-mid="' + item.percentText + '%" data-donut-bottom="' + item.labelAttr + '" data-donut-pct="' + item.percent.toFixed(4) + '">' +
+            '<span class="dashboard-donut__swatch" style="--dash-swatch: ' + item.color + ';"></span>' +
+            '<span class="dashboard-donut__name">' + item.label + '</span>' +
+            '<span class="dashboard-donut__meta">' + item.countText + ' (' + item.percentText + '%)</span>' +
           '</div>';
         }).join('');
-        summaryTypeGridEl.innerHTML = rows;
+
+        summaryTypeGridEl.innerHTML =
+          '<div class="dashboard-summary-type__layout js-donut-interactive">' +
+            '<div class="dashboard-donut" style="--dash-donut-fill: ' + donutFill + ';">' +
+              '<div class="dashboard-donut__center js-donut-center">' +
+                '<strong>' + numberFmt.format(total) + ' record' + (total === 1 ? '' : 's') + '</strong>' +
+                '<small class="js-donut-mid">100.0%</small>' +
+                '<span class="js-donut-sub">All Types</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="dashboard-donut__legend">' + legend + '</div>' +
+          '</div>';
+
+        initInteractiveDonuts(summaryTypeGridEl);
       }
       function renderActiveUsers(items){
         if (!activeUsersListEl) return;
@@ -1075,6 +1457,8 @@ $baseQuery = [
           activeUsersCountFooterEl.textContent = 'Active users: ' + numberFmt.format(value);
         }
       }
+
+      initInteractiveDonuts(document);
 
       async function refreshDashboardStats(){
         try {
@@ -1118,4 +1502,3 @@ $baseQuery = [
   </script>
 </body>
 </html>
-

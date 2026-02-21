@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once "auth.php";
 require_login();
 require_once "db.php";
@@ -10,7 +10,7 @@ $barangays = [
   "Barangay 3 (Bagumbayan)",
   "Barangay 4 (Mantagbac)",
   "Barangay 5 (Pandan)",
-  "Barangay 6 (Centro Occidental)",
+  "Barangay 6 (Centro)",
   "Barangay 7 (Centro Oriental)",
   "Barangay 8 (Salcedo)",
   "Alawihao",
@@ -278,4 +278,5 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
   </script>
 </body>
 </html>
+
 

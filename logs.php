@@ -94,6 +94,8 @@ $userStatusSql = "SELECT
                   ORDER BY u.username ASC";
 $userStatuses = @$conn->query($userStatusSql);
 $tzLabel = app_timezone_label();
+$isLogsSuperAdmin = is_super_admin();
+$logsBackUrl = $isLogsSuperAdmin ? "super_admin.php" : "index.php";
 ?>
 <!doctype html>
 <html lang="en">
@@ -111,7 +113,7 @@ $tzLabel = app_timezone_label();
         <p>Who logged in, who entered data, and who updated records</p>
       </div>
       <div class="header-meta">
-        <a class="btn btn--secondary btn--sm" href="index.php">Back to Dashboard</a>
+        <a class="btn btn--secondary btn--sm" href="<?php echo htmlspecialchars($logsBackUrl); ?>">Back</a>
         <a class="btn btn--secondary btn--sm" href="records.php">All Records</a>
       </div>
     </header>
