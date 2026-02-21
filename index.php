@@ -321,12 +321,22 @@ $baseQuery = [
           <a class="btn btn--secondary btn--sm" href="super_admin.php">Super Admin</a>
         <?php endif; ?>
         <details class="account-menu">
-          <summary class="btn btn--secondary btn--sm account-menu__summary">Account</summary>
+          <summary class="btn btn--secondary btn--sm account-menu__summary">
+            <span class="account-menu__summary-label">Account</span>
+            <span class="account-menu__summary-caret" aria-hidden="true">v</span>
+          </summary>
           <div class="account-menu__panel">
-            <a class="account-menu__item" href="change_password.php">Change Password</a>
+            <div class="account-menu__panel-head">Account Options</div>
+            <a class="account-menu__item" href="change_password.php">
+              <span class="account-menu__item-title">Change Password</span>
+              <span class="account-menu__item-sub">Update your current password</span>
+            </a>
             <form method="POST" action="logout.php" class="account-menu__form">
               <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
-              <button class="account-menu__item account-menu__item--button" type="submit">Log Out</button>
+              <button class="account-menu__item account-menu__item--button" type="submit">
+                <span class="account-menu__item-title">Log Out</span>
+                <span class="account-menu__item-sub">Sign out of this account</span>
+              </button>
             </form>
           </div>
         </details>
