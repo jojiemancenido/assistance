@@ -25,32 +25,37 @@ function has_column(mysqli $conn, string $table, string $column): bool {
   $rs = $st->get_result();
   return ($rs && $rs->num_rows > 0);
 }
+function redirect_with_msg(string $status, string $msg): void {
+  $url = "index.php?status=" . urlencode($status) . "&msg=" . urlencode($msg) . "#entry-section";
+  header("Location: " . $url);
+  exit;
+}
 
 // Basic validation
 if (!verify_csrf_token($csrfToken)) {
-  header("Location: index.php?status=error&msg=" . urlencode("Invalid request token. Please refresh and try again."));
+  redirect_with_msg("error", "Invalid request token. Please refresh and try again.");
   exit;
 }
 
 if ($name === "" || $type === "" || $barangay === "" || $amountRaw === "" || !is_numeric($amountRaw)) {
-  header("Location: index.php?status=error&msg=" . urlencode("Please fill out all required fields correctly."));
+  redirect_with_msg("error", "Please fill out all required fields correctly.");
   exit;
 }
 
 if ($type === "Other" && $type_specify === "") {
-  header("Location: index.php?status=error&msg=" . urlencode("Please specify the Type of Assistance when you choose Other."));
+  redirect_with_msg("error", "Please specify the Type of Assistance when you choose Other.");
   exit;
 }
 
 $amount = (float)$amountRaw;
 if ($amount < 0) {
-  header("Location: index.php?status=error&msg=" . urlencode("Amount must be 0 or higher."));
+  redirect_with_msg("error", "Amount must be 0 or higher.");
   exit;
 }
 
 $ts = strtotime($record_date);
 if ($ts === false) {
-  header("Location: index.php?status=error&msg=" . urlencode("Invalid date."));
+  redirect_with_msg("error", "Invalid date.");
   exit;
 }
 
@@ -73,7 +78,7 @@ if ($hasTypeSpecify) {
   );
 
   if (!$stmt) {
-    header("Location: index.php?status=error&msg=" . urlencode("Database error: " . $conn->error));
+    redirect_with_msg("error", "Database error: " . $conn->error);
     exit;
   }
 
@@ -97,7 +102,7 @@ if ($hasTypeSpecify) {
   );
 
   if (!$stmt) {
-    header("Location: index.php?status=error&msg=" . urlencode("Database error: " . $conn->error));
+    redirect_with_msg("error", "Database error: " . $conn->error);
     exit;
   }
 
@@ -124,9 +129,9 @@ if ($stmt->execute()) {
     $actor !== "" ? $actor : null,
     $newRecordId > 0 ? $newRecordId : null
   );
-  header("Location: index.php?status=success&msg=" . urlencode("Saved successfully."));
+  redirect_with_msg("success", "Saved successfully.");
   exit;
 }
 
-header("Location: index.php?status=error&msg=" . urlencode("Error saving record: " . $stmt->error));
+redirect_with_msg("error", "Error saving record: " . $stmt->error);
 exit;

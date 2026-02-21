@@ -466,7 +466,7 @@ $baseQuery = [
     <main class="main-grid">
 
       <!-- Entry Form -->
-      <section class="card">
+      <section class="card" id="entry-section">
         <div class="card__header">
           <h2 class="card__title">New Entry</h2>
           <p class="card__sub">Fill out the fields then save the record.</p>

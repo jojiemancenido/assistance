@@ -1993,7 +1993,7 @@ body.superadmin-page .sa-legend-meta{
     linear-gradient(180deg, #f8fbff 0%, #eef3fb 58%, #e6edf8 100%);
   opacity:1;
   visibility:visible;
-  transition: opacity .34s ease, visibility .34s ease;
+  transition: opacity .45s ease, visibility .45s ease;
 }
 
 .startup-splash--leave{
