@@ -625,13 +625,14 @@ $baseQuery = [
                         title="Amount visible"
                       >
                         <svg class="eye-icon eye-icon--open" viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
-                          <circle cx="12" cy="12" r="3.5" />
+                          <path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" />
+                          <circle cx="12" cy="12" r="3.25" />
                         </svg>
                         <svg class="eye-icon eye-icon--closed" viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M2 2l20 20" />
-                          <path d="M1 12s4-7 11-7c2 0 3.8.5 5.4 1.4" />
-                          <path d="M23 12s-4 7-11 7c-2 0-3.9-.5-5.6-1.5" />
+                          <path d="M3 3l18 18" />
+                          <path d="M9.7 9.8A3.2 3.2 0 0 0 9 12a3.3 3.3 0 0 0 5.2 2.7" />
+                          <path d="M5.2 7.4C3.6 8.7 2.5 10.6 2 12c1 2.1 4.3 6.5 10 6.5 2.1 0 3.9-.6 5.4-1.5" />
+                          <path d="M10.9 5.6c.4-.1.7-.1 1.1-.1 5.7 0 9 4.4 10 6.5-.4.9-1.1 2.1-2.1 3.2" />
                         </svg>
                       </button>
                       <details class="th-menu">
@@ -686,17 +687,36 @@ $baseQuery = [
                       if ($typeLabel === "Other" && $spec !== "") {
                         $typeLabel .= " (" . $spec . ")";
                       }
+                      $amountDisplay = "PHP " . number_format((float)($r["amount"] ?? 0), 2);
                     ?>
                     <tr>
                       <td class="mono"><?php echo htmlspecialchars($r["record_id"]); ?></td>
                       <td class="strong"><?php echo htmlspecialchars($r["name"]); ?></td>
                       <td><?php echo htmlspecialchars($typeLabel); ?></td>
                       <td><?php echo htmlspecialchars($r["barangay"] ?? ""); ?></td>
-                      <td class="mono col-amount">â‚±<?php echo number_format((float)$r["amount"], 2); ?></td>
+                      <td class="mono col-amount"><?php echo htmlspecialchars($amountDisplay); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($r["record_date"]); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($r["month_year"]); ?></td>
                       <td class="note"><?php echo htmlspecialchars($notesVal); ?></td>
-                      <td><a class="btn btn--secondary btn--sm" href="edit.php?record_id=<?php echo urlencode((string)$r["record_id"]); ?>">Edit</a></td>
+                      <td>
+                        <div class="record-action-group">
+                          <button
+                            type="button"
+                            class="btn btn--secondary btn--sm record-view-btn"
+                            data-record-id="<?php echo htmlspecialchars((string)$r["record_id"], ENT_QUOTES); ?>"
+                            data-record-name="<?php echo htmlspecialchars((string)$r["name"], ENT_QUOTES); ?>"
+                            data-record-type="<?php echo htmlspecialchars($typeLabel, ENT_QUOTES); ?>"
+                            data-record-barangay="<?php echo htmlspecialchars((string)($r["barangay"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-amount="<?php echo htmlspecialchars($amountDisplay, ENT_QUOTES); ?>"
+                            data-record-date="<?php echo htmlspecialchars((string)($r["record_date"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-month-year="<?php echo htmlspecialchars((string)($r["month_year"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-notes="<?php echo htmlspecialchars($notesVal, ENT_QUOTES); ?>"
+                          >
+                            View
+                          </button>
+                          <a class="btn btn--secondary btn--sm" href="edit.php?record_id=<?php echo urlencode((string)$r["record_id"]); ?>">Edit</a>
+                        </div>
+                      </td>
                     </tr>
                   <?php endwhile; ?>
                 <?php else: ?>
@@ -710,6 +730,31 @@ $baseQuery = [
         </div>
       </div>
     </section>
+
+    <div id="record-view-overlay" class="record-view-overlay hidden" aria-hidden="true">
+      <div class="record-view-panel" role="dialog" aria-modal="true" aria-labelledby="record-view-title">
+        <div class="record-view-panel__head">
+          <div>
+            <h3 id="record-view-title">Record Details</h3>
+            <p>Viewing full details for selected record.</p>
+          </div>
+          <button type="button" class="record-view-close" id="record-view-close" aria-label="Close record details">&times;</button>
+        </div>
+        <div class="record-view-grid">
+          <div class="record-view-item"><span>ID</span><strong id="view-record-id">-</strong></div>
+          <div class="record-view-item"><span>Name</span><strong id="view-record-name">-</strong></div>
+          <div class="record-view-item"><span>Type</span><strong id="view-record-type">-</strong></div>
+          <div class="record-view-item"><span>Barangay</span><strong id="view-record-barangay">-</strong></div>
+          <div class="record-view-item"><span>Amount</span><strong id="view-record-amount">-</strong></div>
+          <div class="record-view-item"><span>Date</span><strong id="view-record-date">-</strong></div>
+          <div class="record-view-item"><span>Year-Month</span><strong id="view-record-month-year">-</strong></div>
+          <div class="record-view-item record-view-item--full"><span>Notes</span><strong id="view-record-notes">-</strong></div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn--secondary btn--sm" id="record-view-close-footer">Close</button>
+        </div>
+      </div>
+    </div>
 
     <footer class="footer">
       <span class="muted">Local system â€¢ XAMPP (MySQL) â€¢ PHP</span>
@@ -787,6 +832,73 @@ $baseQuery = [
   </script>
   <script>
     (function(){
+      const overlay = document.getElementById('record-view-overlay');
+      const closeTop = document.getElementById('record-view-close');
+      const closeFooter = document.getElementById('record-view-close-footer');
+      if (!overlay) return;
+
+      const fields = {
+        id: document.getElementById('view-record-id'),
+        name: document.getElementById('view-record-name'),
+        type: document.getElementById('view-record-type'),
+        barangay: document.getElementById('view-record-barangay'),
+        amount: document.getElementById('view-record-amount'),
+        date: document.getElementById('view-record-date'),
+        monthYear: document.getElementById('view-record-month-year'),
+        notes: document.getElementById('view-record-notes')
+      };
+
+      function setField(el, value){
+        if (!el) return;
+        const text = String(value ?? '').trim();
+        el.textContent = text !== '' ? text : '-';
+      }
+
+      function openView(button){
+        setField(fields.id, button.getAttribute('data-record-id'));
+        setField(fields.name, button.getAttribute('data-record-name'));
+        setField(fields.type, button.getAttribute('data-record-type'));
+        setField(fields.barangay, button.getAttribute('data-record-barangay'));
+        setField(fields.amount, button.getAttribute('data-record-amount'));
+        setField(fields.date, button.getAttribute('data-record-date'));
+        setField(fields.monthYear, button.getAttribute('data-record-month-year'));
+        setField(fields.notes, button.getAttribute('data-record-notes'));
+
+        overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+      }
+
+      function closeView(){
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+      }
+
+      document.addEventListener('click', function(e){
+        const button = e.target.closest('.record-view-btn');
+        if (button) {
+          openView(button);
+          return;
+        }
+
+        if (e.target === overlay) {
+          closeView();
+        }
+      });
+
+      if (closeTop) closeTop.addEventListener('click', closeView);
+      if (closeFooter) closeFooter.addEventListener('click', closeView);
+
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape' && !overlay.classList.contains('hidden')) {
+          closeView();
+        }
+      });
+    })();
+  </script>
+  <script>
+    (function(){
       const searchForm = document.querySelector('form.search');
       const searchInput = document.getElementById('live-search-input');
       const tbody = document.getElementById('records-tbody');
@@ -817,6 +929,16 @@ $baseQuery = [
         }
         const rowsHtml = items.map(function(row){
           const editUrl = 'edit.php?record_id=' + encodeURIComponent(row.record_id ?? '');
+          const viewAttrs =
+            ' data-record-id="' + escapeHtml(row.record_id) + '"' +
+            ' data-record-name="' + escapeHtml(row.name) + '"' +
+            ' data-record-type="' + escapeHtml(row.type_label) + '"' +
+            ' data-record-barangay="' + escapeHtml(row.barangay) + '"' +
+            ' data-record-amount="' + escapeHtml(row.amount_display) + '"' +
+            ' data-record-date="' + escapeHtml(row.record_date) + '"' +
+            ' data-record-month-year="' + escapeHtml(row.month_year) + '"' +
+            ' data-record-notes="' + escapeHtml(row.notes) + '"';
+
           return '<tr>' +
             '<td class="mono">' + escapeHtml(row.record_id) + '</td>' +
             '<td class="strong">' + escapeHtml(row.name) + '</td>' +
@@ -826,7 +948,10 @@ $baseQuery = [
             '<td class="mono">' + escapeHtml(row.record_date) + '</td>' +
             '<td class="mono">' + escapeHtml(row.month_year) + '</td>' +
             '<td class="note">' + escapeHtml(row.notes) + '</td>' +
-            '<td><a class="btn btn--secondary btn--sm" href="' + editUrl + '">Edit</a></td>' +
+            '<td><div class="record-action-group">' +
+              '<button type="button" class="btn btn--secondary btn--sm record-view-btn"' + viewAttrs + '>View</button>' +
+              '<a class="btn btn--secondary btn--sm" href="' + editUrl + '">Edit</a>' +
+            '</div></td>' +
           '</tr>';
         }).join('');
         tbody.innerHTML = rowsHtml;
@@ -993,3 +1118,4 @@ $baseQuery = [
   </script>
 </body>
 </html>
+

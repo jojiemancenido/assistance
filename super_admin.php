@@ -322,6 +322,64 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "dele
   redirect_super_admin("success", "Account deleted successfully.", $extra);
 }
 
+if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "force_logout_account")) {
+  $token = $_POST["csrf_token"] ?? "";
+  $targetUsername = trim((string)($_POST["target_username"] ?? ""));
+  $extra = "#active-sessions-section";
+
+  if (!verify_csrf_token($token)) {
+    redirect_super_admin("error", "Invalid request token.", $extra);
+  }
+  if ($targetUsername === "") {
+    redirect_super_admin("error", "Invalid account selected.", $extra);
+  }
+  if ($targetUsername === $authUser) {
+    redirect_super_admin("error", "You cannot force logout your current session here.", $extra);
+  }
+
+  $activeStmt = $conn->prepare(
+    "SELECT 1 FROM auth_active_sessions WHERE username = ? AND expires_at >= UTC_TIMESTAMP() LIMIT 1"
+  );
+  if (!$activeStmt) {
+    redirect_super_admin("error", "Database error: " . $conn->error, $extra);
+  }
+  $activeStmt->bind_param("s", $targetUsername);
+  $activeStmt->execute();
+  $activeRs = $activeStmt->get_result();
+  $isActive = ($activeRs && $activeRs->num_rows > 0);
+  $activeStmt->close();
+
+  if (!$isActive) {
+    redirect_super_admin("error", "Account is not currently active.", $extra);
+  }
+
+  $kickStmt = $conn->prepare("DELETE FROM auth_active_sessions WHERE username = ?");
+  if (!$kickStmt) {
+    redirect_super_admin("error", "Database error: " . $conn->error, $extra);
+  }
+  $kickStmt->bind_param("s", $targetUsername);
+  if (!$kickStmt->execute()) {
+    $err = $kickStmt->error;
+    $kickStmt->close();
+    redirect_super_admin("error", "Failed forcing logout: " . $err, $extra);
+  }
+  $affected = (int)$kickStmt->affected_rows;
+  $kickStmt->close();
+
+  if ($affected < 1) {
+    redirect_super_admin("error", "Account is not currently active.", $extra);
+  }
+
+  audit_log(
+    "force_logout",
+    "Super admin forced logout for account \"" . $targetUsername . "\".",
+    $authUser !== "" ? $authUser : null,
+    null
+  );
+
+  redirect_super_admin("success", "Account logged out from active session.", $extra);
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "delete_record")) {
   $token = $_POST["csrf_token"] ?? "";
   $deleteRecordId = (int)($_POST["delete_record_id"] ?? 0);
@@ -629,37 +687,110 @@ $saBaseQuery = [
       </div>
     </section>
 
-    <section class="card section">
-      <div class="card__header">
-        <h2 class="card__title">Create Account</h2>
-        <p class="card__sub">Create admin/user/super-admin account.</p>
+    <section id="accounts-section" class="card section accounts-hub">
+      <div class="card__header card__header--row accounts-hub__header">
+        <div>
+          <h2 class="card__title">Account Center</h2>
+          <p class="card__sub">Create new accounts and manage all record accounts in one place.</p>
+        </div>
+        <div class="accounts-hub__badges">
+          <span class="accounts-hub__badge"><strong><?php echo number_format($totalAccounts); ?></strong> Total</span>
+          <span class="accounts-hub__badge accounts-hub__badge--active"><strong><?php echo number_format($totalActiveUsers); ?></strong> Active</span>
+        </div>
       </div>
-      <div class="card__body">
-        <form method="POST" action="super_admin.php" autocomplete="off">
-          <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
-          <input type="hidden" name="action" value="create_account" />
-          <div class="form-grid">
-            <div class="field">
-              <label for="new_username">Username</label>
-              <input id="new_username" name="new_username" type="text" required />
+      <div class="card__body accounts-hub__body">
+        <details id="create-account-panel" class="accounts-create-disclosure">
+          <summary class="accounts-create-disclosure__summary">
+            <div class="accounts-create-disclosure__title">
+              <h3>Create Account</h3>
+              <p>Click to open the form and add a new account.</p>
             </div>
-            <div class="field">
-              <label for="new_password">Password</label>
-              <input id="new_password" name="new_password" type="password" required />
-            </div>
-            <div class="field">
-              <label for="new_role">Role</label>
-              <select id="new_role" name="new_role">
-                <option value="admin">admin</option>
-                <option value="user">user</option>
-                <option value="super_admin">super_admin</option>
-              </select>
+            <span class="accounts-create-disclosure__plus" aria-hidden="true">+</span>
+          </summary>
+          <div class="accounts-create-panel">
+            <form class="accounts-create-form" method="POST" action="super_admin.php" autocomplete="off">
+              <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+              <input type="hidden" name="action" value="create_account" />
+              <div class="form-grid accounts-create-grid">
+                <div class="field">
+                  <label for="new_username">Username</label>
+                  <input id="new_username" name="new_username" type="text" required />
+                </div>
+                <div class="field">
+                  <label for="new_password">Password</label>
+                  <input id="new_password" name="new_password" type="password" required />
+                </div>
+                <div class="field accounts-create-role">
+                  <label for="new_role">Role</label>
+                  <select id="new_role" name="new_role">
+                    <option value="admin">admin</option>
+                    <option value="user">user</option>
+                    <option value="super_admin">super_admin</option>
+                  </select>
+                </div>
+              </div>
+              <div class="actions accounts-create-actions">
+                <button class="btn" type="submit">Create Account</button>
+              </div>
+            </form>
+          </div>
+        </details>
+
+        <div class="accounts-table-panel"> 
+          <div class="accounts-table-panel__head">
+            <div>
+              <h3>All Record Accounts</h3>
+              <p>Account status and recent login activity.</p>
             </div>
           </div>
-          <div class="actions">
-            <button class="btn" type="submit">Create Account</button>
+          <div class="table-wrap accounts-table-wrap">
+            <div class="table-scroll" style="max-height: 420px; overflow-y:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Created (<?php echo htmlspecialchars($tzLabel); ?>)</th>
+                    <th>Last Login (<?php echo htmlspecialchars($tzLabel); ?>)</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php if ($accounts && $accounts->num_rows > 0): ?>
+                    <?php while ($u = $accounts->fetch_assoc()): ?>
+                      <?php
+                        $isActive = ((string)($u["current_status"] ?? "") === "Active");
+                        $createdAt = format_utc_datetime_for_app((string)($u["created_at"] ?? ""));
+                        $lastLogin = format_utc_datetime_for_app((string)($u["last_login_at"] ?? ""));
+                      ?>
+                      <tr>
+                        <td class="strong"><?php echo htmlspecialchars((string)$u["username"]); ?></td>
+                        <td class="mono"><?php echo htmlspecialchars((string)$u["role"]); ?></td>
+                        <td><span class="status-pill <?php echo $isActive ? "status-pill--active" : "status-pill--inactive"; ?>"><?php echo $isActive ? "Active" : "Inactive"; ?></span></td>
+                        <td class="mono"><?php echo htmlspecialchars($createdAt !== "" ? $createdAt : "-"); ?></td>
+                        <td class="mono"><?php echo htmlspecialchars($lastLogin !== "" ? $lastLogin : "-"); ?></td>
+                        <td>
+                          <div class="account-action-group">
+                            <a class="btn btn--secondary btn--sm" href="super_admin.php?edit_user=<?php echo urlencode((string)$u["username"]); ?>#edit-account-section">Edit</a>
+                            <form method="POST" action="super_admin.php#accounts-section" class="inline-form" onsubmit="return confirm('Delete account <?php echo htmlspecialchars(addslashes((string)$u["username"])); ?>?');">
+                              <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+                              <input type="hidden" name="action" value="delete_account" />
+                              <input type="hidden" name="delete_username" value="<?php echo htmlspecialchars((string)$u["username"]); ?>" />
+                              <button class="btn btn--sm btn--danger" type="submit">Delete</button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                    <?php endwhile; ?>
+                  <?php else: ?>
+                    <tr><td colspan="6" class="muted">No accounts found.</td></tr>
+                  <?php endif; ?>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </form>
+        </div>
       </div>
     </section>
 
@@ -707,63 +838,7 @@ $saBaseQuery = [
       </section>
     <?php endif; ?>
 
-    <section id="accounts-section" class="card section">
-      <div class="card__header">
-        <h2 class="card__title">All Record Accounts</h2>
-        <p class="card__sub">Account list with status and login time/date.</p>
-      </div>
-      <div class="card__body">
-        <div class="table-wrap">
-          <div class="table-scroll" style="max-height: 420px; overflow-y:auto;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Username</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Created (<?php echo htmlspecialchars($tzLabel); ?>)</th>
-                  <th>Last Login (<?php echo htmlspecialchars($tzLabel); ?>)</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php if ($accounts && $accounts->num_rows > 0): ?>
-                  <?php while ($u = $accounts->fetch_assoc()): ?>
-                    <?php
-                      $isActive = ((string)($u["current_status"] ?? "") === "Active");
-                      $createdAt = format_utc_datetime_for_app((string)($u["created_at"] ?? ""));
-                      $lastLogin = format_utc_datetime_for_app((string)($u["last_login_at"] ?? ""));
-                    ?>
-                    <tr>
-                      <td class="strong"><?php echo htmlspecialchars((string)$u["username"]); ?></td>
-                      <td class="mono"><?php echo htmlspecialchars((string)$u["role"]); ?></td>
-                      <td><span class="status-pill <?php echo $isActive ? "status-pill--active" : "status-pill--inactive"; ?>"><?php echo $isActive ? "Active" : "Inactive"; ?></span></td>
-                      <td class="mono"><?php echo htmlspecialchars($createdAt !== "" ? $createdAt : "-"); ?></td>
-                      <td class="mono"><?php echo htmlspecialchars($lastLogin !== "" ? $lastLogin : "-"); ?></td>
-                      <td>
-                        <div class="account-action-group">
-                          <a class="btn btn--secondary btn--sm" href="super_admin.php?edit_user=<?php echo urlencode((string)$u["username"]); ?>#edit-account-section">Edit</a>
-                          <form method="POST" action="super_admin.php#accounts-section" class="inline-form" onsubmit="return confirm('Delete account <?php echo htmlspecialchars(addslashes((string)$u["username"])); ?>?');">
-                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
-                            <input type="hidden" name="action" value="delete_account" />
-                            <input type="hidden" name="delete_username" value="<?php echo htmlspecialchars((string)$u["username"]); ?>" />
-                            <button class="btn btn--sm btn--danger" type="submit">Delete</button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  <?php endwhile; ?>
-                <?php else: ?>
-                  <tr><td colspan="6" class="muted">No accounts found.</td></tr>
-                <?php endif; ?>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card section">
+    <section id="active-sessions-section" class="card section">
       <div class="card__header">
         <h2 class="card__title">Who Is Active Now</h2>
         <p class="card__sub">Active users and login/session timestamps.</p>
@@ -778,25 +853,40 @@ $saBaseQuery = [
                   <th>Login Time-Date (<?php echo htmlspecialchars($tzLabel); ?>)</th>
                   <th>Last Seen (<?php echo htmlspecialchars($tzLabel); ?>)</th>
                   <th>Session Expires (<?php echo htmlspecialchars($tzLabel); ?>)</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 <?php if ($activeSessions && $activeSessions->num_rows > 0): ?>
                   <?php while ($s = $activeSessions->fetch_assoc()): ?>
                     <?php
+                      $activeUsername = (string)($s["username"] ?? "");
                       $loginAt = format_utc_datetime_for_app((string)($s["last_login_at"] ?? ""));
                       $lastSeen = format_utc_datetime_for_app((string)($s["last_seen"] ?? ""));
                       $expiresAt = format_utc_datetime_for_app((string)($s["expires_at"] ?? ""));
+                      $isOwnSession = ($activeUsername !== "" && $activeUsername === $authUser);
                     ?>
                     <tr>
-                      <td class="strong"><?php echo htmlspecialchars((string)$s["username"]); ?></td>
+                      <td class="strong"><?php echo htmlspecialchars($activeUsername); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($loginAt !== "" ? $loginAt : "-"); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($lastSeen !== "" ? $lastSeen : "-"); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($expiresAt !== "" ? $expiresAt : "-"); ?></td>
+                      <td>
+                        <?php if ($isOwnSession): ?>
+                          <span class="muted">Current Session</span>
+                        <?php else: ?>
+                          <form method="POST" action="super_admin.php#active-sessions-section" class="inline-form" onsubmit="return confirm('Force logout <?php echo htmlspecialchars(addslashes($activeUsername)); ?>?');">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+                            <input type="hidden" name="action" value="force_logout_account" />
+                            <input type="hidden" name="target_username" value="<?php echo htmlspecialchars($activeUsername); ?>" />
+                            <button class="btn btn--sm btn--danger" type="submit">Log Out Device</button>
+                          </form>
+                        <?php endif; ?>
+                      </td>
                     </tr>
                   <?php endwhile; ?>
                 <?php else: ?>
-                  <tr><td colspan="4" class="muted">No active users right now.</td></tr>
+                  <tr><td colspan="5" class="muted">No active users right now.</td></tr>
                 <?php endif; ?>
               </tbody>
             </table>
@@ -956,18 +1046,15 @@ $saBaseQuery = [
                       <td class="mono"><?php echo htmlspecialchars((string)($r["month_year"] ?? "")); ?></td>
                       <td><?php echo htmlspecialchars($notesVal); ?></td>
                       <td>
-                        <div class="account-action-group">
-                          <a class="btn btn--secondary btn--sm" href="edit.php?record_id=<?php echo urlencode((string)$r["record_id"]); ?>">Edit</a>
-                          <form method="POST" action="super_admin.php#all-assistance-section" class="inline-form" onsubmit="return confirm('Delete record #<?php echo htmlspecialchars(addslashes((string)$r["record_id"])); ?> for <?php echo htmlspecialchars(addslashes((string)$r["name"])); ?>?');">
-                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
-                            <input type="hidden" name="action" value="delete_record" />
-                            <input type="hidden" name="delete_record_id" value="<?php echo htmlspecialchars((string)$r["record_id"]); ?>" />
-                            <input type="hidden" name="records_type" value="<?php echo htmlspecialchars($saTypeFilter); ?>" />
-                            <input type="hidden" name="records_barangay" value="<?php echo htmlspecialchars($saBarangayFilter); ?>" />
-                            <input type="hidden" name="records_sort" value="<?php echo htmlspecialchars($saRecordsSort); ?>" />
-                            <button class="btn btn--sm btn--danger" type="submit">Delete</button>
-                          </form>
-                        </div>
+                        <?php
+                          $saReturnQuery = build_sa_query([
+                            "records_type" => $saTypeFilter,
+                            "records_barangay" => $saBarangayFilter,
+                            "records_sort" => $saRecordsSort,
+                          ]);
+                          $saReturnTo = "super_admin.php" . ($saReturnQuery !== "" ? ("?" . $saReturnQuery) : "") . "#all-assistance-section";
+                        ?>
+                        <a class="btn btn--secondary btn--sm" href="edit.php?record_id=<?php echo urlencode((string)$r["record_id"]); ?>&return_to=<?php echo urlencode($saReturnTo); ?>">Edit</a>
                       </td>
                     </tr>
                   <?php endwhile; ?>
@@ -983,3 +1070,9 @@ $saBaseQuery = [
   </div>
 </body>
 </html>
+
+
+
+
+
+

@@ -51,12 +51,52 @@ function extract_specify_from_notes(string &$notes): string {
   return "";
 }
 
+function normalize_return_to(string $raw, bool $isSuperAdmin): string {
+  $fallback = $isSuperAdmin ? "super_admin.php#all-assistance-section" : "index.php#records-section";
+  $decoded = rawurldecode(trim($raw));
+
+  if ($decoded === "" || str_contains($decoded, "://") || str_starts_with($decoded, "//") || str_starts_with($decoded, "\\")) {
+    return $fallback;
+  }
+
+  $parts = parse_url($decoded);
+  if ($parts === false) {
+    return $fallback;
+  }
+
+  $path = trim((string)($parts["path"] ?? ""));
+  if (!in_array($path, ["index.php", "records.php", "super_admin.php"], true)) {
+    return $fallback;
+  }
+  if ($path === "super_admin.php" && !$isSuperAdmin) {
+    return $fallback;
+  }
+
+  $query = isset($parts["query"]) && $parts["query"] !== "" ? ("?" . $parts["query"]) : "";
+  $fragment = isset($parts["fragment"]) && $parts["fragment"] !== "" ? ("#" . $parts["fragment"]) : "";
+  return $path . $query . $fragment;
+}
+
+function with_status_message(string $url, string $status, string $message): string {
+  $fragment = "";
+  $hashPos = strpos($url, "#");
+  if ($hashPos !== false) {
+    $fragment = substr($url, $hashPos);
+    $url = substr($url, 0, $hashPos);
+  }
+
+  $joiner = str_contains($url, "?") ? "&" : "?";
+  return $url . $joiner . "status=" . urlencode($status) . "&msg=" . urlencode($message) . $fragment;
+}
+
+$isSuperAdmin = is_super_admin();
 $recordId = (int)($_GET["record_id"] ?? 0);
+$returnTo = normalize_return_to((string)($_GET["return_to"] ?? ""), $isSuperAdmin);
 $status = trim((string)($_GET["status"] ?? ""));
 $msg = trim((string)($_GET["msg"] ?? ""));
 
 if ($recordId <= 0) {
-  header("Location: index.php?status=error&msg=" . urlencode("Invalid record selected for editing."));
+  header("Location: " . with_status_message($returnTo, "error", "Invalid record selected for editing."));
   exit;
 }
 
@@ -68,7 +108,7 @@ if ($hasTypeSpecify) {
 
 $stmt = $conn->prepare("SELECT $selectCols FROM records WHERE record_id = ? LIMIT 1");
 if (!$stmt) {
-  header("Location: index.php?status=error&msg=" . urlencode("Database error: " . $conn->error));
+  header("Location: " . with_status_message($returnTo, "error", "Database error: " . $conn->error));
   exit;
 }
 $stmt->bind_param("i", $recordId);
@@ -78,7 +118,7 @@ $row = $result ? $result->fetch_assoc() : null;
 $stmt->close();
 
 if (!$row) {
-  header("Location: index.php?status=error&msg=" . urlencode("Record not found."));
+  header("Location: " . with_status_message($returnTo, "error", "Record not found."));
   exit;
 }
 
@@ -97,6 +137,7 @@ if ($hasTypeSpecify) {
 }
 
 $canDeleteRecord = is_super_admin();
+$backDashboardHref = $returnTo;
 
 if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
   $barangays[] = $barangay;
@@ -121,7 +162,7 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
         <?php if (is_super_admin()): ?>
           <a class="btn btn--secondary btn--sm" href="logs.php">Logs</a>
         <?php endif; ?>
-        <a class="btn btn--secondary btn--sm" href="index.php">Back to Dashboard</a>
+        <a class="btn btn--secondary btn--sm" href="<?php echo htmlspecialchars($backDashboardHref); ?>">Back to Dashboard</a>
         <a class="btn btn--secondary btn--sm" href="records.php">All Records</a>
       </div>
     </header>
@@ -141,6 +182,7 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
         <form method="POST" action="update.php" autocomplete="off">
           <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
           <input type="hidden" name="record_id" value="<?php echo (int)$recordId; ?>" />
+          <input type="hidden" name="return_to" value="<?php echo htmlspecialchars($returnTo); ?>" />
 
           <div class="form-grid">
             <div class="field">
@@ -205,7 +247,7 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
           </div>
 
           <div class="actions">
-            <a class="btn btn--secondary" href="index.php">Cancel</a>
+            <a class="btn btn--secondary" href="<?php echo htmlspecialchars($returnTo); ?>">Cancel</a>
             <?php if ($canDeleteRecord): ?>
               <button class="btn btn--danger" type="submit" formaction="delete_record.php" formmethod="POST" formnovalidate onclick="return confirm('Delete this record permanently?');">Delete Record</button>
             <?php endif; ?>
@@ -236,3 +278,4 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
   </script>
 </body>
 </html>
+
