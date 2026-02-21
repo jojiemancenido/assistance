@@ -320,11 +320,16 @@ $baseQuery = [
           </div>
           <a class="btn btn--secondary btn--sm" href="super_admin.php">Super Admin</a>
         <?php endif; ?>
-        <a class="btn btn--secondary btn--sm" href="change_password.php">Change Password</a>
-        <form method="POST" action="logout.php" class="logout-form">
-          <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
-          <button class="btn btn--secondary btn--sm" type="submit">Log Out</button>
-        </form>
+        <details class="account-menu">
+          <summary class="btn btn--secondary btn--sm account-menu__summary">Account</summary>
+          <div class="account-menu__panel">
+            <a class="account-menu__item" href="change_password.php">Change Password</a>
+            <form method="POST" action="logout.php" class="account-menu__form">
+              <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+              <button class="account-menu__item account-menu__item--button" type="submit">Log Out</button>
+            </form>
+          </div>
+        </details>
       </div>
     </header>
 
