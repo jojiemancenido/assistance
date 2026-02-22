@@ -1309,7 +1309,7 @@ $saBaseQuery = [
           <p class="card__sub">Leave all unchecked to export all assistance types. Select one or more to export specific types.</p>
         </form>
 
-        <div class="table-wrap">
+        <div id="sa-records-table-wrap" class="table-wrap">
           <div class="table-scroll" style="max-height: 520px; overflow-y:auto;">
             <table>
               <thead>
@@ -1389,7 +1389,7 @@ $saBaseQuery = [
                   <th>Action</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="sa-records-tbody">
                 <?php if ($recordsAll && $recordsAll->num_rows > 0): ?>
                   <?php while ($r = $recordsAll->fetch_assoc()): ?>
                     <?php
@@ -1437,6 +1437,132 @@ $saBaseQuery = [
     </section>
   </div>
       <script>
+    (function(){
+      var tbody = document.getElementById('sa-records-tbody');
+      var tableWrap = document.getElementById('sa-records-table-wrap');
+      if (!tbody || !tableWrap) return;
+
+      var controller = null;
+      var requestId = 0;
+      var refreshTimer = null;
+      var lastRenderKey = '';
+
+      function escapeHtml(value){
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function getRecordsQuery(){
+        var urlQuery = new URLSearchParams(window.location.search || '');
+        var query = new URLSearchParams();
+        var type = urlQuery.get('records_type') || '';
+        var barangay = urlQuery.get('records_barangay') || '';
+        var sort = urlQuery.get('records_sort') || 'new';
+
+        if (type !== '') query.set('records_type', type);
+        if (barangay !== '') query.set('records_barangay', barangay);
+        query.set('records_sort', sort);
+        return query;
+      }
+
+      function buildReturnTo(){
+        var query = getRecordsQuery().toString();
+        return 'super_admin.php' + (query ? ('?' + query) : '') + '#all-assistance-section';
+      }
+
+      function renderRows(items){
+        if (!Array.isArray(items) || items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="11" class="muted">No assistance records found.</td></tr>';
+          return;
+        }
+
+        var returnTo = buildReturnTo();
+        var rowsHtml = items.map(function(row){
+          var editUrl = 'edit.php?record_id=' + encodeURIComponent(row.record_id || '') +
+            '&return_to=' + encodeURIComponent(returnTo);
+
+          return '<tr>' +
+            '<td class="mono">' + escapeHtml(row.record_id) + '</td>' +
+            '<td class="strong">' + escapeHtml(row.name) + '</td>' +
+            '<td>' + escapeHtml(row.type_label) + '</td>' +
+            '<td>' + escapeHtml(row.barangay) + '</td>' +
+            '<td>' + escapeHtml(row.municipality) + '</td>' +
+            '<td>' + escapeHtml(row.province) + '</td>' +
+            '<td class="mono">' + escapeHtml(row.amount_display) + '</td>' +
+            '<td class="mono">' + escapeHtml(row.record_date) + '</td>' +
+            '<td class="mono">' + escapeHtml(row.month_year) + '</td>' +
+            '<td>' + escapeHtml(row.notes) + '</td>' +
+            '<td><a class="btn btn--secondary btn--sm" href="' + editUrl + '">Edit</a></td>' +
+          '</tr>';
+        }).join('');
+
+        tbody.innerHTML = rowsHtml;
+      }
+
+      async function refreshRecords(showLoading){
+        var currentRequest = ++requestId;
+        if (controller) controller.abort();
+        controller = new AbortController();
+
+        if (showLoading) tableWrap.classList.add('is-loading');
+
+        try {
+          var params = getRecordsQuery();
+          params.set('_ts', String(Date.now()));
+
+          var response = await fetch('super_admin_live_records.php?' + params.toString(), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store',
+            signal: controller.signal
+          });
+
+          if (!response.ok) {
+            throw new Error('Live records request failed with status ' + response.status);
+          }
+
+          var data = await response.json();
+          if (currentRequest !== requestId) return;
+          if (!data || data.ok !== true || !Array.isArray(data.items)) {
+            throw new Error('Invalid live records response');
+          }
+
+          var renderKey = JSON.stringify(data.items);
+          if (renderKey !== lastRenderKey) {
+            lastRenderKey = renderKey;
+            renderRows(data.items);
+          }
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+          console.error(err);
+        } finally {
+          if (currentRequest === requestId && showLoading) {
+            tableWrap.classList.remove('is-loading');
+          }
+        }
+      }
+
+      function startAutoRefresh(){
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(function(){
+          if (document.hidden) return;
+          refreshRecords(false);
+        }, 4000);
+      }
+
+      document.addEventListener('visibilitychange', function(){
+        if (!document.hidden) refreshRecords(false);
+      });
+
+      startAutoRefresh();
+      refreshRecords(false);
+    })();
+  </script>
+  <script>
     (function () {
       var groups = document.querySelectorAll('.js-donut-interactive');
       if (!groups.length) return;

@@ -326,6 +326,7 @@ $baseQuery = [
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Beneficiary Records</title>
   <link rel="stylesheet" href="styles.css" />
+ <link rel="icon" type="image/png" sizes="32x32" href="daet logo lgu.png" />
 </head>
 
 <body>
@@ -1074,14 +1075,19 @@ $baseQuery = [
       const tableWrap = document.getElementById('records-table-wrap');
       const subtitle = document.getElementById('records-subtitle');
       if (!searchForm || !searchInput || !tbody || !tableWrap) return;
+
       const initialRowsHtml = tbody.innerHTML;
       const initialSubtitle = subtitle ? subtitle.textContent : '';
       const typeInput = searchForm.querySelector('input[name="type"]');
       const barangayInput = searchForm.querySelector('input[name="barangay"]');
       const sortInput = searchForm.querySelector('input[name="sort"]');
+
       let debounceTimer = null;
+      let refreshTimer = null;
       let controller = null;
       let requestId = 0;
+      let lastRenderKey = '';
+
       function escapeHtml(value){
         return String(value ?? '')
           .replace(/&/g, '&amp;')
@@ -1090,12 +1096,43 @@ $baseQuery = [
           .replace(/\"/g, '&quot;')
           .replace(/'/g, '&#039;');
       }
+
+      function buildParams(){
+        const params = new URLSearchParams();
+        params.set('q', searchInput.value.trim());
+        params.set('limit', '<?php echo (int)$limit; ?>');
+        if (typeInput && typeInput.value !== '') params.set('type', typeInput.value);
+        if (barangayInput && barangayInput.value !== '') params.set('barangay', barangayInput.value);
+        if (sortInput && sortInput.value !== '') params.set('sort', sortInput.value);
+        params.set('_ts', String(Date.now()));
+        return params;
+      }
+
+      function buildSubtitleForCount(count, query){
+        const hasFilter =
+          (typeInput && typeInput.value !== '') ||
+          (barangayInput && barangayInput.value !== '');
+
+        if (query !== '') {
+          return 'Live results: ' + count + ' for "' + query + '".';
+        }
+
+        if (hasFilter) {
+          return 'Showing all matching results.';
+        }
+
+        return 'Showing all saved entries.';
+      }
+
       function renderRows(items, query){
         if (!Array.isArray(items) || items.length === 0) {
           tbody.innerHTML = '<tr><td colspan="9" class="muted">No records found.</td></tr>';
-          if (subtitle) subtitle.textContent = 'Live results: 0 for "' + query + '".';
+          if (subtitle) {
+            subtitle.textContent = buildSubtitleForCount(0, query);
+          }
           return;
         }
+
         const rowsHtml = items.map(function(row){
           const editUrl = 'edit.php?record_id=' + encodeURIComponent(row.record_id ?? '');
           const viewAttrs =
@@ -1123,56 +1160,104 @@ $baseQuery = [
             '</div></td>' +
           '</tr>';
         }).join('');
+
         tbody.innerHTML = rowsHtml;
-        if (subtitle) subtitle.textContent = 'Live results: ' + items.length + ' for "' + query + '".';
-      }
-      async function runLiveSearch(){
-        const query = searchInput.value.trim();
-        if (query === '') {
-          if (controller) controller.abort();
-          tbody.innerHTML = initialRowsHtml;
-          if (subtitle) subtitle.textContent = initialSubtitle;
-          tableWrap.classList.remove('is-loading');
-          return;
+        if (subtitle) {
+          subtitle.textContent = buildSubtitleForCount(items.length, query);
         }
+      }
+
+      async function runLiveSearch(options){
+        const opts = options || {};
+        const showLoading = opts.showLoading !== false;
+
+        const params = buildParams();
+        const query = params.get('q') || '';
+        const typeValue = params.get('type') || '';
+        const barangayValue = params.get('barangay') || '';
+        const sortValue = params.get('sort') || '';
         const currentRequest = ++requestId;
+
         if (controller) controller.abort();
         controller = new AbortController();
-        const params = new URLSearchParams();
-        params.set('q', query);
-        params.set('limit', '<?php echo (int)$limit; ?>');
-        if (typeInput && typeInput.value !== '') params.set('type', typeInput.value);
-        if (barangayInput && barangayInput.value !== '') params.set('barangay', barangayInput.value);
-        if (sortInput && sortInput.value !== '') params.set('sort', sortInput.value);
-        tableWrap.classList.add('is-loading');
+
+        if (showLoading) tableWrap.classList.add('is-loading');
+
         try {
           const response = await fetch('live_search.php?' + params.toString(), {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
+            cache: 'no-store',
             signal: controller.signal
           });
+
           if (!response.ok) {
             throw new Error('Live search failed with status ' + response.status);
           }
+
           const data = await response.json();
           if (currentRequest !== requestId) return;
           if (!data || data.ok !== true || !Array.isArray(data.items)) {
             throw new Error('Invalid live search response');
           }
-          renderRows(data.items, query);
+
+          const renderKey = JSON.stringify({
+            q: query,
+            type: typeValue,
+            barangay: barangayValue,
+            sort: sortValue,
+            items: data.items
+          });
+
+          if (renderKey !== lastRenderKey) {
+            lastRenderKey = renderKey;
+            renderRows(data.items, query);
+          }
         } catch (err) {
           if (err && err.name === 'AbortError') return;
           console.error(err);
+          if (opts.restoreOnFail === true) {
+            tbody.innerHTML = initialRowsHtml;
+            if (subtitle) subtitle.textContent = initialSubtitle;
+          }
         } finally {
-          if (currentRequest === requestId) {
+          if (currentRequest === requestId && showLoading) {
             tableWrap.classList.remove('is-loading');
           }
         }
       }
-      searchInput.addEventListener('input', function(){
+
+      function scheduleLiveSearch(){
         if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(runLiveSearch, 250);
+        debounceTimer = setTimeout(function(){
+          runLiveSearch({ showLoading: true });
+        }, 250);
+      }
+
+      function startAutoRefresh(){
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(function(){
+          if (document.hidden) return;
+          if (document.activeElement === searchInput) return;
+          runLiveSearch({ showLoading: false });
+        }, 4000);
+      }
+
+      searchInput.addEventListener('input', scheduleLiveSearch);
+
+      searchForm.addEventListener('submit', function(e){
+        e.preventDefault();
+        runLiveSearch({ showLoading: true, restoreOnFail: true });
       });
+
+      document.addEventListener('visibilitychange', function(){
+        if (!document.hidden) {
+          runLiveSearch({ showLoading: false });
+        }
+      });
+
+      startAutoRefresh();
+      runLiveSearch({ showLoading: false, restoreOnFail: true });
     })();
   </script>
   <script>

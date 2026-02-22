@@ -2724,3 +2724,662 @@ body.superadmin-page .js-donut-center .js-donut-sub{
   font-weight:700;
   color:#5b6f8b;
 }
+
+/* Responsive Layout Tune-up (Phone / Tablet / Laptop / Desktop) */
+img,
+svg,
+video{
+  max-width:100%;
+  height:auto;
+}
+
+body{
+  overflow-x:hidden;
+}
+
+.app{
+  max-width: 1280px;
+  margin: clamp(12px, 2.2vw, 24px) auto clamp(20px, 3vw, 36px);
+  padding: 0 clamp(12px, 2vw, 22px);
+}
+
+.card__title{
+  font-size: clamp(1rem, 1.4vw, 1.35rem);
+}
+
+.card__sub{
+  font-size: clamp(.78rem, 1vw, .92rem);
+}
+
+.btn{
+  min-height: 40px;
+}
+
+@media (max-width: 1100px){
+  .app-header{
+    flex-wrap:wrap;
+    align-items:flex-start;
+  }
+
+  .brand{
+    min-width:0;
+    flex: 1 1 260px;
+  }
+
+  .header-meta{
+    width:100%;
+    justify-content:flex-start;
+    flex-wrap:wrap;
+  }
+
+  .search{
+    width:100%;
+    flex-wrap:wrap;
+    justify-content:flex-start;
+  }
+
+  .search input{
+    flex: 1 1 100%;
+    width:100%;
+    min-width:0;
+  }
+
+  .search select{
+    flex: 1 1 220px;
+    min-width: 180px;
+  }
+}
+
+@media (max-width: 900px){
+  .form-grid{
+    grid-template-columns:1fr;
+  }
+
+  .records-filter-row{
+    align-items:stretch;
+  }
+
+  .records-filter-main,
+  .records-filter-sort{
+    width:100%;
+    margin-left:0;
+  }
+
+  .filter-field{
+    width:100%;
+    flex-wrap:wrap;
+  }
+
+  .filter-field select{
+    width:100%;
+    min-width:0;
+  }
+
+  table{
+    min-width: 760px;
+  }
+
+  th,
+  td{
+    padding: 10px 10px;
+    font-size: 13px;
+  }
+
+  body.records-fullscreen{
+    height:auto;
+    min-height:100svh;
+    overflow:auto;
+  }
+
+  .records-shell{
+    height:auto;
+    min-height:100svh;
+    padding: 12px;
+  }
+
+  .records-table-scroll{
+    height:auto;
+    max-height: 62vh;
+  }
+
+  body.superadmin-page .sa-kpi-grid{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.superadmin-page .sa-stats-layout{
+    grid-template-columns: 1fr;
+  }
+
+  body.superadmin-page .sa-stats-right{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px){
+  .app{
+    padding: 0 10px;
+  }
+
+  .app-header{
+    padding: 12px;
+    gap:10px;
+  }
+
+  .brand{
+    width:100%;
+    flex: 1 1 100%;
+  }
+
+  .brand-text h1{
+    font-size: 16px;
+  }
+
+  .brand-text p{
+    font-size: 12px;
+  }
+
+  .header-meta{
+    gap:8px;
+  }
+
+  .header-meta .btn{
+    flex:1 1 auto;
+    min-width: 128px;
+  }
+
+  .badge,
+  .user-chip{
+    width:100%;
+    justify-content:center;
+  }
+
+  .search select,
+  .search .btn,
+  .search .btn--secondary{
+    flex:1 1 100%;
+    width:100%;
+  }
+
+  .records-links__primary{
+    width:100%;
+  }
+
+  .records-links__primary .btn{
+    flex:1 1 100%;
+    width:100%;
+  }
+
+  table{
+    min-width: 680px;
+  }
+
+  th,
+  td{
+    padding: 9px 9px;
+    font-size: 12px;
+  }
+
+  .record-view-panel{
+    width:min(96vw, 520px);
+    max-height:92vh;
+  }
+
+  .dashboard-summary-type__layout{
+    grid-template-columns:1fr;
+  }
+
+  .dashboard-donut{
+    width: 136px;
+    height:136px;
+    margin: 0 auto;
+  }
+
+  .dashboard-donut::after{
+    inset:18px;
+  }
+
+  body.superadmin-page .sa-kpi-grid{
+    grid-template-columns: 1fr;
+  }
+
+  body.superadmin-page .sa-stats-right{
+    grid-template-columns: 1fr;
+  }
+
+  body.superadmin-page .sa-donut-layout,
+  body.superadmin-page .sa-donut-layout--compact,
+  body.superadmin-page .sa-stats-left .sa-donut-layout{
+    grid-template-columns: 1fr;
+    justify-items:center;
+  }
+
+  body.superadmin-page .sa-legend-list,
+  body.superadmin-page .sa-legend-list--compact,
+  body.superadmin-page .sa-stats-left .sa-legend-list{
+    width:100%;
+  }
+}
+
+@media (min-width: 1400px){
+  .app{
+    max-width: 1360px;
+  }
+}
+
+/* Mobile Layout Hard Fix (prevents right-side blank area) */
+@media (max-width: 1024px){
+  html,
+  body{
+    width:100%;
+    max-width:100%;
+    overflow-x:hidden;
+  }
+
+  .app{
+    width:100%;
+    max-width:100%;
+    margin: 12px auto 24px;
+    padding: 0 10px;
+  }
+
+  .main-grid{
+    grid-template-columns:1fr !important;
+    gap:12px;
+  }
+
+  .stack{
+    position:static !important;
+    top:auto;
+  }
+
+  .app-header{
+    display:grid;
+    grid-template-columns:1fr;
+    align-items:stretch;
+    gap:10px;
+  }
+
+  .brand{
+    width:100%;
+    min-width:0;
+  }
+
+  .header-meta{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:8px;
+    align-items:stretch;
+    justify-content:stretch;
+  }
+
+  .header-meta > *{
+    min-width:0;
+  }
+
+  .user-chip,
+  .badge,
+  .header-meta .btn,
+  .account-menu,
+  .account-menu__summary{
+    width:100%;
+  }
+
+  .user-chip,
+  .badge,
+  .header-meta .btn,
+  .account-menu__summary{
+    justify-content:center;
+    text-align:center;
+  }
+
+  .account-menu{
+    display:block;
+  }
+
+  .account-menu__summary{
+    display:flex;
+  }
+
+  .account-menu__panel{
+    right:auto;
+    left:0;
+    width:min(320px, calc(100vw - 32px));
+    max-width:calc(100vw - 32px);
+  }
+
+  .search{
+    width:100%;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  .search input,
+  .search select,
+  .search button,
+  .search a{
+    min-width:0;
+  }
+
+  .table-wrap,
+  .table-scroll{
+    width:100%;
+    max-width:100%;
+  }
+}
+
+@media (max-width: 640px){
+  .header-meta{
+    grid-template-columns:1fr;
+  }
+
+  .search{
+    display:grid;
+    grid-template-columns:1fr;
+  }
+
+  .search input,
+  .search select,
+  .search button,
+  .search a{
+    width:100%;
+  }
+
+  .chips{
+    overflow-x:auto;
+    white-space:nowrap;
+    padding-bottom:4px;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .chips .chip{
+    flex:0 0 auto;
+  }
+
+  table{
+    min-width:620px;
+  }
+}
+
+/* Phone Header Relayout (Dashboard only) */
+@media (max-width: 768px){
+  body:not(.superadmin-page) .app-header{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:10px;
+    padding:12px;
+  }
+
+  body:not(.superadmin-page) .brand{
+    width:100%;
+    min-width:0;
+  }
+
+  body:not(.superadmin-page) .header-meta{
+    width:100%;
+    display:grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap:8px;
+    align-items:stretch;
+    justify-content:stretch !important;
+  }
+
+  body:not(.superadmin-page) .header-meta > *{
+    min-width:0;
+  }
+
+  body:not(.superadmin-page) .user-chip,
+  body:not(.superadmin-page) .badge,
+  body:not(.superadmin-page) .header-meta .btn,
+  body:not(.superadmin-page) .account-menu,
+  body:not(.superadmin-page) .account-menu__summary{
+    width:100%;
+    min-width:0;
+  }
+
+  body:not(.superadmin-page) .user-chip,
+  body:not(.superadmin-page) .badge,
+  body:not(.superadmin-page) .header-meta .btn,
+  body:not(.superadmin-page) .account-menu__summary{
+    justify-content:center;
+    text-align:center;
+    white-space:normal;
+    line-height:1.2;
+  }
+
+  body:not(.superadmin-page) .account-menu__summary{
+    min-width:0;
+  }
+
+  body:not(.superadmin-page) .account-menu__panel{
+    left:0;
+    right:auto;
+    width:min(340px, calc(100vw - 28px));
+    max-width:calc(100vw - 28px);
+  }
+}
+
+@media (max-width: 520px){
+  body:not(.superadmin-page) .header-meta{
+    grid-template-columns:1fr !important;
+  }
+
+  body:not(.superadmin-page) .logo{
+    width:40px;
+    height:40px;
+    border-radius:12px;
+  }
+
+  body:not(.superadmin-page) .brand-text h1{
+    font-size:17px;
+  }
+
+  body:not(.superadmin-page) .brand-text p{
+    font-size:12px;
+  }
+}
+
+/* Mobile UI Refresh (Dashboard only) */
+@media (max-width: 768px){
+  body:not(.superadmin-page){
+    background:
+      radial-gradient(640px 320px at 12% -10%, rgba(var(--primary-rgb), .14), transparent 58%),
+      linear-gradient(180deg, #edf2ff 0%, #f5f8ff 45%, #f8fafc 100%);
+  }
+
+  body:not(.superadmin-page) .app{
+    max-width:560px;
+    margin:10px auto 22px;
+    padding:0 10px;
+  }
+
+  body:not(.superadmin-page) .main-grid{
+    grid-template-columns:1fr !important;
+    gap:12px;
+  }
+
+  body:not(.superadmin-page) .stack{
+    position:static !important;
+  }
+
+  body:not(.superadmin-page) .app-header{
+    padding:14px;
+    gap:12px;
+    border-radius:20px;
+    border:1px solid #dce6f4;
+    background:
+      radial-gradient(130% 140% at 0% 0%, rgba(59,130,246,.14), transparent 58%),
+      linear-gradient(180deg, #ffffff, #f7fbff);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, .10);
+  }
+
+  body:not(.superadmin-page) .brand{
+    width:100%;
+    min-width:0;
+    align-items:flex-start;
+    gap:10px;
+  }
+
+  body:not(.superadmin-page) .logo{
+    width:46px;
+    height:46px;
+    border-radius:14px;
+  }
+
+  body:not(.superadmin-page) .brand-text h1{
+    font-size:17px;
+    line-height:1.1;
+  }
+
+  body:not(.superadmin-page) .brand-text p{
+    font-size:13px;
+    line-height:1.3;
+  }
+
+  body:not(.superadmin-page) .header-meta{
+    width:100%;
+    display:grid !important;
+    grid-template-columns:repeat(2, minmax(0, 1fr)) !important;
+    gap:8px;
+    align-items:stretch;
+    justify-content:stretch !important;
+  }
+
+  body:not(.superadmin-page) .header-meta > *{
+    min-width:0;
+  }
+
+  body:not(.superadmin-page) .user-chip,
+  body:not(.superadmin-page) .badge,
+  body:not(.superadmin-page) .header-meta .btn,
+  body:not(.superadmin-page) .account-menu,
+  body:not(.superadmin-page) .account-menu__summary{
+    width:100%;
+    min-width:0;
+    min-height:46px;
+    border-radius:14px;
+  }
+
+  body:not(.superadmin-page) .user-chip,
+  body:not(.superadmin-page) .badge,
+  body:not(.superadmin-page) .header-meta .btn,
+  body:not(.superadmin-page) .account-menu__summary{
+    justify-content:center;
+    text-align:center;
+    white-space:normal;
+    line-height:1.2;
+    border:1px solid #dbe4f0;
+    box-shadow:0 5px 12px rgba(15,23,42,.05);
+  }
+
+  body:not(.superadmin-page) .user-chip{
+    background:#ffffff;
+  }
+
+  body:not(.superadmin-page) .badge{
+    background:linear-gradient(180deg, #f0f6ff, #e8f1ff);
+    border-color:#bfd6ff;
+    color:#1e40af;
+  }
+
+  body:not(.superadmin-page) .header-meta .btn.btn--secondary,
+  body:not(.superadmin-page) .account-menu__summary{
+    background:linear-gradient(180deg, #f8fafd, #eaf0f8);
+    color:#0f172a;
+  }
+
+  body:not(.superadmin-page) .account-menu{
+    display:block;
+  }
+
+  body:not(.superadmin-page) .account-menu__panel{
+    left:0;
+    right:auto;
+    width:100%;
+    max-width:100%;
+    margin-top:8px;
+    border-radius:12px;
+    box-shadow:0 10px 20px rgba(2,6,23,.12);
+  }
+
+  body:not(.superadmin-page) .card{
+    border-radius:18px;
+    border-color:#dbe4f0;
+    box-shadow: 0 12px 26px rgba(15,23,42,.08);
+  }
+
+  body:not(.superadmin-page) .card__header{
+    padding:14px 14px 12px;
+  }
+
+  body:not(.superadmin-page) .card__body{
+    padding:14px;
+  }
+
+  body:not(.superadmin-page) input,
+  body:not(.superadmin-page) select,
+  body:not(.superadmin-page) textarea{
+    border-radius:14px;
+  }
+
+  body:not(.superadmin-page) input,
+  body:not(.superadmin-page) select{
+    height:46px;
+  }
+
+  body:not(.superadmin-page) .actions .btn{
+    width:100%;
+    min-height:48px;
+    border-radius:14px;
+  }
+
+  body:not(.superadmin-page) .import-form{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:8px;
+    align-items:stretch;
+  }
+
+  body:not(.superadmin-page) .import-form input[type="file"],
+  body:not(.superadmin-page) .import-form .btn{
+    width:100%;
+  }
+
+  body:not(.superadmin-page) .summary-number--compact{
+    font-size:46px;
+    padding:16px 10px;
+  }
+
+  body:not(.superadmin-page) .dashboard-summary-type__layout{
+    grid-template-columns:1fr;
+    justify-items:center;
+    gap:10px;
+  }
+
+  body:not(.superadmin-page) .dashboard-donut{
+    width:138px;
+    height:138px;
+  }
+
+  body:not(.superadmin-page) .dashboard-donut::after{
+    inset:18px;
+  }
+}
+
+@media (max-width: 560px){
+  body:not(.superadmin-page) .app{
+    padding:0 8px;
+  }
+
+  body:not(.superadmin-page) .header-meta{
+    grid-template-columns:1fr !important;
+  }
+
+  body:not(.superadmin-page) .brand-text h1{
+    font-size:16px;
+  }
+
+  body:not(.superadmin-page) .brand-text p{
+    font-size:12px;
+  }
+}
