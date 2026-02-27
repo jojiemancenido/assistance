@@ -71,6 +71,12 @@ $recordDate = trim((string)($_POST["record_date"] ?? date("Y-m-d")));
 $notes = trim((string)($_POST["notes"] ?? ""));
 $csrfToken = $_POST["csrf_token"] ?? "";
 $returnTo = normalize_return_to((string)($_POST["return_to"] ?? ""), is_super_admin());
+$scopedBarangay = current_scoped_barangay();
+if ($scopedBarangay !== "") {
+  $barangay = $scopedBarangay;
+}
+$scopedOffice = current_scoped_office();
+$isOfficeScoped = ($scopedOffice !== "");
 
 $municipality = "Daet";
 $province = "Camarines Norte";
@@ -103,18 +109,41 @@ if ($ts === false) {
 }
 $monthYear = date("Y-m", $ts);
 
-$checkStmt = $conn->prepare("SELECT record_id FROM records WHERE record_id = ? LIMIT 1");
+$checkSql = "SELECT record_id, office_scope FROM records WHERE record_id = ?";
+if ($isOfficeScoped) {
+  $checkSql .= " AND office_scope = ?";
+}
+if ($scopedBarangay !== "") {
+  $checkSql .= " AND barangay = ?";
+}
+$checkSql .= " LIMIT 1";
+
+$checkStmt = $conn->prepare($checkSql);
 if (!$checkStmt) {
   redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo);
 }
-$checkStmt->bind_param("i", $recordId);
+if ($isOfficeScoped && $scopedBarangay !== "") {
+  $checkStmt->bind_param("iss", $recordId, $scopedOffice, $scopedBarangay);
+} elseif ($isOfficeScoped) {
+  $checkStmt->bind_param("is", $recordId, $scopedOffice);
+} elseif ($scopedBarangay !== "") {
+  $checkStmt->bind_param("is", $recordId, $scopedBarangay);
+} else {
+  $checkStmt->bind_param("i", $recordId);
+}
 $checkStmt->execute();
 $exists = $checkStmt->get_result();
+$checkRow = ($exists && $exists->num_rows > 0) ? $exists->fetch_assoc() : null;
 $checkStmt->close();
-if (!$exists || $exists->num_rows === 0) {
-  header("Location: " . with_status_message($returnTo, "error", "Record not found."));
+if (!$checkRow) {
+  header("Location: " . with_status_message($returnTo, "error", "Record not found or access denied."));
   exit;
 }
+$existingOfficeScope = normalize_office_scope_name((string)($checkRow["office_scope"] ?? ""));
+if ($existingOfficeScope === "") {
+  $existingOfficeScope = "municipality";
+}
+$officeScopeToSave = $isOfficeScoped ? $scopedOffice : $existingOfficeScope;
 
 $hasTypeSpecify = has_column($conn, "records", "type_specify");
 if (!$hasTypeSpecify) {
@@ -127,56 +156,175 @@ if (!$hasTypeSpecify) {
 }
 
 if ($hasTypeSpecify) {
-  $stmt = $conn->prepare(
-    "UPDATE records
-     SET name = ?, type = ?, type_specify = ?, barangay = ?, municipality = ?, province = ?, amount = ?, record_date = ?, month_year = ?, notes = ?
-     WHERE record_id = ?
-     LIMIT 1"
-  );
+  $updateSql = "UPDATE records
+     SET name = ?, type = ?, type_specify = ?, barangay = ?, office_scope = ?, municipality = ?, province = ?, amount = ?, record_date = ?, month_year = ?, notes = ?
+     WHERE record_id = ?";
+  if ($isOfficeScoped) {
+    $updateSql .= " AND office_scope = ?";
+  }
+  if ($scopedBarangay !== "") {
+    $updateSql .= " AND barangay = ?";
+  }
+  $updateSql .= " LIMIT 1";
+
+  $stmt = $conn->prepare($updateSql);
 
   if (!$stmt) {
     redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo);
   }
 
-  $stmt->bind_param(
-    "ssssssdsssi",
-    $name,
-    $type,
-    $typeSpecify,
-    $barangay,
-    $municipality,
-    $province,
-    $amount,
-    $recordDate,
-    $monthYear,
-    $notes,
-    $recordId
-  );
+  if ($isOfficeScoped && $scopedBarangay !== "") {
+    $stmt->bind_param(
+      "sssssssdsssiss",
+      $name,
+      $type,
+      $typeSpecify,
+      $barangay,
+      $officeScopeToSave,
+      $municipality,
+      $province,
+      $amount,
+      $recordDate,
+      $monthYear,
+      $notes,
+      $recordId,
+      $scopedOffice,
+      $scopedBarangay
+    );
+  } elseif ($isOfficeScoped) {
+    $stmt->bind_param(
+      "sssssssdsssis",
+      $name,
+      $type,
+      $typeSpecify,
+      $barangay,
+      $officeScopeToSave,
+      $municipality,
+      $province,
+      $amount,
+      $recordDate,
+      $monthYear,
+      $notes,
+      $recordId,
+      $scopedOffice
+    );
+  } elseif ($scopedBarangay !== "") {
+    $stmt->bind_param(
+      "sssssssdsssis",
+      $name,
+      $type,
+      $typeSpecify,
+      $barangay,
+      $officeScopeToSave,
+      $municipality,
+      $province,
+      $amount,
+      $recordDate,
+      $monthYear,
+      $notes,
+      $recordId,
+      $scopedBarangay
+    );
+  } else {
+    $stmt->bind_param(
+      "sssssssdsssi",
+      $name,
+      $type,
+      $typeSpecify,
+      $barangay,
+      $officeScopeToSave,
+      $municipality,
+      $province,
+      $amount,
+      $recordDate,
+      $monthYear,
+      $notes,
+      $recordId
+    );
+  }
 } else {
-  $stmt = $conn->prepare(
-    "UPDATE records
-     SET name = ?, type = ?, barangay = ?, municipality = ?, province = ?, amount = ?, record_date = ?, month_year = ?, notes = ?
-     WHERE record_id = ?
-     LIMIT 1"
-  );
+  $updateSql = "UPDATE records
+     SET name = ?, type = ?, barangay = ?, office_scope = ?, municipality = ?, province = ?, amount = ?, record_date = ?, month_year = ?, notes = ?
+     WHERE record_id = ?";
+  if ($isOfficeScoped) {
+    $updateSql .= " AND office_scope = ?";
+  }
+  if ($scopedBarangay !== "") {
+    $updateSql .= " AND barangay = ?";
+  }
+  $updateSql .= " LIMIT 1";
+
+  $stmt = $conn->prepare($updateSql);
 
   if (!$stmt) {
     redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo);
   }
 
-  $stmt->bind_param(
-    "sssssdsssi",
-    $name,
-    $type,
-    $barangay,
-    $municipality,
-    $province,
-    $amount,
-    $recordDate,
-    $monthYear,
-    $notes,
-    $recordId
-  );
+  if ($isOfficeScoped && $scopedBarangay !== "") {
+    $stmt->bind_param(
+      "ssssssdsssiss",
+      $name,
+      $type,
+      $barangay,
+      $officeScopeToSave,
+      $municipality,
+      $province,
+      $amount,
+      $recordDate,
+      $monthYear,
+      $notes,
+      $recordId,
+      $scopedOffice,
+      $scopedBarangay
+    );
+  } elseif ($isOfficeScoped) {
+    $stmt->bind_param(
+      "ssssssdsssis",
+      $name,
+      $type,
+      $barangay,
+      $officeScopeToSave,
+      $municipality,
+      $province,
+      $amount,
+      $recordDate,
+      $monthYear,
+      $notes,
+      $recordId,
+      $scopedOffice
+    );
+  } elseif ($scopedBarangay !== "") {
+    $stmt->bind_param(
+      "ssssssdsssis",
+      $name,
+      $type,
+      $barangay,
+      $officeScopeToSave,
+      $municipality,
+      $province,
+      $amount,
+      $recordDate,
+      $monthYear,
+      $notes,
+      $recordId,
+      $scopedBarangay
+    );
+  } else {
+    $stmt->bind_param(
+      "ssssssdsssi",
+      $name,
+      $type,
+      $barangay,
+      $officeScopeToSave,
+      $municipality,
+      $province,
+      $amount,
+      $recordDate,
+      $monthYear,
+      $notes,
+      $recordId
+    );
+  }
 }
 
 if (!$stmt->execute()) {

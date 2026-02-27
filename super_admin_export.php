@@ -133,7 +133,7 @@ if (!in_array($format, ["excel", "pdf"], true)) {
 }
 
 $hasTypeSpecify = has_column($conn, "records", "type_specify");
-$sql = "SELECT record_id, name, type, barangay, municipality, province, amount, record_date, month_year, notes";
+$sql = "SELECT record_id, name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes";
 if ($hasTypeSpecify) {
   $sql .= ", type_specify";
 }
@@ -156,6 +156,7 @@ if ($rs) {
       "name" => (string)($r["name"] ?? ""),
       "type_label" => build_type_label((string)($r["type"] ?? ""), $spec),
       "barangay" => (string)($r["barangay"] ?? ""),
+      "office_scope" => normalize_office_scope_name((string)($r["office_scope"] ?? "")),
       "municipality" => (string)($r["municipality"] ?? ""),
       "province" => (string)($r["province"] ?? ""),
       "amount" => (float)($r["amount"] ?? 0),
@@ -220,6 +221,7 @@ if ($format === "excel") {
           <th>ID</th>
           <th>Name</th>
           <th>Type</th>
+          <th>Office</th>
           <th>Barangay</th>
           <th>Municipality</th>
           <th>Province</th>
@@ -236,6 +238,7 @@ if ($format === "excel") {
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["record_id"])); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["name"])); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["type_label"])); ?></td>
+              <td><?php echo htmlspecialchars(safe_excel_cell((string)ucfirst((string)$r["office_scope"]))); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["barangay"])); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["municipality"])); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["province"])); ?></td>
@@ -246,7 +249,7 @@ if ($format === "excel") {
             </tr>
           <?php endforeach; ?>
         <?php else: ?>
-          <tr><td colspan="10">No records found.</td></tr>
+          <tr><td colspan="11">No records found.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>
@@ -268,6 +271,7 @@ if (empty($rows)) {
 } else {
   foreach ($rows as $r) {
     $lines[] = "ID #" . $r["record_id"] . " - " . normalize_pdf_text((string)$r["name"]);
+    $lines[] = "Office: " . normalize_pdf_text((string)ucfirst((string)$r["office_scope"]));
     $lines[] = "Type: " . normalize_pdf_text((string)$r["type_label"]) .
                " | Amount: PHP " . number_format((float)$r["amount"], 2) .
                " | Date: " . normalize_pdf_text((string)$r["record_date"]);

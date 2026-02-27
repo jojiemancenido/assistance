@@ -34,6 +34,10 @@ function build_type_label(string $type, string $spec): string {
 $q = trim((string)($_GET["q"] ?? ""));
 $typeFilter = trim((string)($_GET["type"] ?? ""));
 $sort = trim((string)($_GET["sort"] ?? "new"));
+$scopedBarangay = current_scoped_barangay();
+$isBarangayScoped = ($scopedBarangay !== "");
+$scopedOffice = current_scoped_office();
+$isOfficeScoped = ($scopedOffice !== "");
 
 $hasTypeSpecify = has_column($conn, "records", "type_specify");
 $typeSortExpr = "type";
@@ -58,6 +62,12 @@ $orderBy = $allowedSorts[$sort] ?? $allowedSorts["new"];
 $where = [];
 $paramTypes = "";
 $params = [];
+
+if ($isOfficeScoped) {
+  $where[] = "office_scope = ?";
+  $paramTypes .= "s";
+  $params[] = $scopedOffice;
+}
 
 if ($q !== "") {
   $where[] = "name LIKE ?";
@@ -87,6 +97,12 @@ if ($typeFilter !== "") {
   }
 }
 
+if ($isBarangayScoped) {
+  $where[] = "barangay = ?";
+  $paramTypes .= "s";
+  $params[] = $scopedBarangay;
+}
+
 $selectCols = "record_id, name, type, barangay, amount, record_date, month_year, notes";
 if ($hasTypeSpecify) {
   $selectCols .= ", type_specify";
@@ -114,7 +130,27 @@ if ($hasTypeSpecify) {
   $scanSql .= ", type_specify";
 }
 $scanSql .= " FROM records";
-$scanRs = @$conn->query($scanSql);
+$scanTypes = "";
+$scanParams = [];
+if ($isOfficeScoped) {
+  $scanSql .= " WHERE office_scope = ?";
+  $scanTypes .= "s";
+  $scanParams[] = $scopedOffice;
+}
+if ($isBarangayScoped) {
+  $scanSql .= ($isOfficeScoped ? " AND " : " WHERE ") . "barangay = ?";
+  $scanTypes .= "s";
+  $scanParams[] = $scopedBarangay;
+}
+$scanStmt = $conn->prepare($scanSql);
+$scanRs = null;
+if ($scanStmt) {
+  if (!empty($scanParams)) {
+    $scanStmt->bind_param($scanTypes, ...$scanParams);
+  }
+  $scanStmt->execute();
+  $scanRs = $scanStmt->get_result();
+}
 if ($scanRs) {
   while ($row = $scanRs->fetch_assoc()) {
     $notesVal = (string)($row["notes"] ?? "");
@@ -124,6 +160,9 @@ if ($scanRs) {
       $typeLabels[$label] = true;
     }
   }
+}
+if ($scanStmt) {
+  $scanStmt->close();
 }
 $typeLabels = array_keys($typeLabels);
 natcasesort($typeLabels);

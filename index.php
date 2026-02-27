@@ -75,13 +75,18 @@ function build_type_label(string $type, string $spec): string {
 $today = date("Y-m-d");
 $q = trim($_GET["q"] ?? "");
 $typeFilter = trim($_GET["type"] ?? "");
-$barangayFilter = trim($_GET["barangay"] ?? "");
+$barangayFilter = effective_barangay_filter(trim($_GET["barangay"] ?? ""));
 $sort = trim($_GET["sort"] ?? "new");
 $status = trim($_GET["status"] ?? "");
 $msg = trim($_GET["msg"] ?? "");
 $authUser = (string)($_SESSION["auth_user"] ?? "");
 $authToken = (string)($_SESSION["auth_session_token"] ?? "");
 $isSuperAdmin = is_super_admin();
+$scopedBarangay = current_scoped_barangay();
+$isBarangayScoped = ($scopedBarangay !== "");
+$scopedOffice = current_scoped_office();
+$isOfficeScoped = ($scopedOffice !== "");
+$visibleBarangays = $isBarangayScoped ? [$scopedBarangay] : $barangays;
 
 cleanup_expired_active_sessions();
 $isCurrentSessionActive = ($authUser !== "" && $authToken !== "" && has_active_session_slot($authUser, $authToken));
@@ -127,9 +132,34 @@ if ($res && $row = $res->fetch_assoc()) {
 
 // Total Records (big number)
 $totalRecords = 0;
-$r1 = @$conn->query("SELECT COUNT(*) AS total_records FROM records");
-if ($r1 && $row = $r1->fetch_assoc()) {
-  $totalRecords = (int)($row["total_records"] ?? 0);
+$countSql = "SELECT COUNT(*) AS total_records FROM records";
+$countWhere = [];
+$countBindTypes = "";
+$countBindParams = [];
+if ($isOfficeScoped) {
+  $countWhere[] = "office_scope = ?";
+  $countBindTypes .= "s";
+  $countBindParams[] = $scopedOffice;
+}
+if ($isBarangayScoped) {
+  $countWhere[] = "barangay = ?";
+  $countBindTypes .= "s";
+  $countBindParams[] = $scopedBarangay;
+}
+if (!empty($countWhere)) {
+  $countSql .= " WHERE " . implode(" AND ", $countWhere);
+}
+$countStmt = $conn->prepare($countSql);
+if ($countStmt) {
+  if (!empty($countBindParams)) {
+    $countStmt->bind_param($countBindTypes, ...$countBindParams);
+  }
+  $countStmt->execute();
+  $r1 = $countStmt->get_result();
+  if ($r1 && $row = $r1->fetch_assoc()) {
+    $totalRecords = (int)($row["total_records"] ?? 0);
+  }
+  $countStmt->close();
 }
 
 // Summary totals per assistance category (count only)
@@ -140,7 +170,27 @@ if ($hasTypeSpecify) {
   $selectTotals .= ", type_specify";
 }
 $selectTotals .= " FROM records";
-$rt = @$conn->query($selectTotals);
+$totalsBindTypes = "";
+$totalsBindParams = [];
+if ($isOfficeScoped) {
+  $selectTotals .= " WHERE office_scope = ?";
+  $totalsBindTypes .= "s";
+  $totalsBindParams[] = $scopedOffice;
+}
+if ($isBarangayScoped) {
+  $selectTotals .= ($isOfficeScoped ? " AND " : " WHERE ") . "barangay = ?";
+  $totalsBindTypes .= "s";
+  $totalsBindParams[] = $scopedBarangay;
+}
+$totalsStmt = $conn->prepare($selectTotals);
+$rt = null;
+if ($totalsStmt) {
+  if (!empty($totalsBindParams)) {
+    $totalsStmt->bind_param($totalsBindTypes, ...$totalsBindParams);
+  }
+  $totalsStmt->execute();
+  $rt = $totalsStmt->get_result();
+}
 if ($rt) {
   while ($row = $rt->fetch_assoc()) {
     $t = (string)($row["type"] ?? "");
@@ -162,6 +212,9 @@ if ($rt) {
       $typeOptions[$label] = ["type" => $t, "spec" => $spec];
     }
   }
+}
+if ($totalsStmt) {
+  $totalsStmt->close();
 }
 
 foreach ($types as $t) {
@@ -250,6 +303,12 @@ $limit = 0;
 $where = [];
 $paramTypes = "";
 $params = [];
+
+if ($isOfficeScoped) {
+  $where[] = "office_scope = ?";
+  $paramTypes .= "s";
+  $params[] = $scopedOffice;
+}
 
 if ($q !== "") {
   $where[] = "name LIKE ?";
@@ -431,6 +490,11 @@ $baseQuery = [
             <?php echo $isCurrentSessionActive ? "Active" : "Inactive"; ?>
           </span>
         </div>
+        <?php if ($isOfficeScoped): ?>
+          <div class="user-chip">
+            Office <strong><?php echo htmlspecialchars(ucfirst($scopedOffice)); ?></strong>
+          </div>
+        <?php endif; ?>
         <div class="badge">
           Next Record ID
           <strong>#<?php echo htmlspecialchars((string)$nextId); ?></strong>
@@ -518,12 +582,17 @@ $baseQuery = [
 
               <div class="field field--full">
                 <label for="barangay">Barangay</label>
-                <select id="barangay" name="barangay" required>
-                  <option value="" disabled selected>Select barangay</option>
-                  <?php foreach ($barangays as $b): ?>
-                    <option value="<?php echo htmlspecialchars($b); ?>"><?php echo htmlspecialchars($b); ?></option>
-                  <?php endforeach; ?>
-                </select>
+                <?php if ($isBarangayScoped): ?>
+                  <input id="barangay" class="readonly" type="text" value="<?php echo htmlspecialchars($scopedBarangay); ?>" readonly />
+                  <input type="hidden" name="barangay" value="<?php echo htmlspecialchars($scopedBarangay); ?>" />
+                <?php else: ?>
+                  <select id="barangay" name="barangay" required>
+                    <option value="" disabled selected>Select barangay</option>
+                    <?php foreach ($visibleBarangays as $b): ?>
+                      <option value="<?php echo htmlspecialchars($b); ?>"><?php echo htmlspecialchars($b); ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                <?php endif; ?>
               </div>
 
               <div class="field">
@@ -746,15 +815,17 @@ $baseQuery = [
                   <th>
                     <span class="th-with-menu">
                       <span>Barangay</span>
-                      <details class="th-menu">
-                        <summary class="th-menu__summary" aria-label="Barangay filter"></summary>
-                        <div class="th-menu__list">
-                          <a href="index.php?<?php echo build_query($baseQuery, ["barangay" => ""]); ?>#records-section">All Barangays</a>
-                          <?php foreach ($barangays as $b): ?>
-                            <a href="index.php?<?php echo build_query($baseQuery, ["barangay" => $b]); ?>#records-section"><?php echo htmlspecialchars($b); ?></a>
-                          <?php endforeach; ?>
-                        </div>
-                      </details>
+                      <?php if (!$isBarangayScoped): ?>
+                        <details class="th-menu">
+                          <summary class="th-menu__summary" aria-label="Barangay filter"></summary>
+                          <div class="th-menu__list">
+                            <a href="index.php?<?php echo build_query($baseQuery, ["barangay" => ""]); ?>#records-section">All Barangays</a>
+                            <?php foreach ($visibleBarangays as $b): ?>
+                              <a href="index.php?<?php echo build_query($baseQuery, ["barangay" => $b]); ?>#records-section"><?php echo htmlspecialchars($b); ?></a>
+                            <?php endforeach; ?>
+                          </div>
+                        </details>
+                      <?php endif; ?>
                     </span>
                   </th>
                   <th class="col-amount">

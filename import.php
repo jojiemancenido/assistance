@@ -335,6 +335,11 @@ if (!verify_csrf_token($csrfToken)) {
   redirect_with_status("error", "Invalid request token. Please refresh and try again.");
 }
 
+$scopedBarangay = current_scoped_barangay();
+$isBarangayScoped = ($scopedBarangay !== "");
+$scopedOffice = current_scoped_office();
+$officeScope = ($scopedOffice !== "") ? $scopedOffice : "municipality";
+
 if (!isset($_FILES["import_file"])) {
   redirect_with_status("error", "Please choose a file to import.");
 }
@@ -379,13 +384,13 @@ $province = "Camarines Norte";
 
 if ($hasTypeSpecify) {
   $stmt = $conn->prepare(
-    "INSERT INTO records (name, type, type_specify, barangay, municipality, province, amount, record_date, month_year, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO records (name, type, type_specify, barangay, office_scope, municipality, province, amount, record_date, month_year, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
 } else {
   $stmt = $conn->prepare(
-    "INSERT INTO records (name, type, barangay, municipality, province, amount, record_date, month_year, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO records (name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
 }
 
@@ -411,6 +416,17 @@ for ($i = 1; $i < count($rows); $i++) {
   if ($nameVal === "" && $barangayVal === "" && $typeRaw === "" && $amountRaw === "" && $dateRaw === "") {
     $skipped++;
     continue;
+  }
+
+  if ($isBarangayScoped) {
+    if ($barangayVal === "" || strcasecmp($barangayVal, $scopedBarangay) !== 0) {
+      $failed++;
+      if (count($errorRows) < 5) {
+        $errorRows[] = "row " . $rowNumber;
+      }
+      continue;
+    }
+    $barangayVal = $scopedBarangay;
   }
 
   [$typeVal, $typeSpecifyVal] = normalize_type($typeRaw);
@@ -442,11 +458,12 @@ for ($i = 1; $i < count($rows); $i++) {
   if ($hasTypeSpecify) {
     $typeSpecifySave = ($typeVal === "Other") ? $typeSpecifyVal : "";
     $stmt->bind_param(
-      "ssssssdsss",
+      "sssssssdsss",
       $nameVal,
       $typeVal,
       $typeSpecifySave,
       $barangayVal,
+      $officeScope,
       $municipality,
       $province,
       $amountVal,
@@ -459,10 +476,11 @@ for ($i = 1; $i < count($rows); $i++) {
       $notes = "[SPECIFY]" . $typeSpecifyVal . "[/SPECIFY]\n" . $notes;
     }
     $stmt->bind_param(
-      "sssssdsss",
+      "ssssssdsss",
       $nameVal,
       $typeVal,
       $barangayVal,
+      $officeScope,
       $municipality,
       $province,
       $amountVal,

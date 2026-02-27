@@ -43,6 +43,49 @@ function build_sa_query(array $base, array $override = []): string {
   return http_build_query($q);
 }
 
+function daet_barangays(): array {
+  return [
+    "Barangay 1",
+    "Barangay 2 (Pasig)",
+    "Barangay 3 (Bagumbayan)",
+    "Barangay 4 (Mantagbac)",
+    "Barangay 5 (Pandan)",
+    "Barangay 6 (Centro)",
+    "Barangay 7 (Centro Oriental)",
+    "Barangay 8 (Salcedo)",
+    "Alawihao",
+    "Awitan",
+    "Bagasbas",
+    "Bibirao",
+    "Borabod",
+    "Calasgasan",
+    "Camambugan",
+    "Cobangbang",
+    "Dogongan",
+    "Gahonon",
+    "Gubat",
+    "Lag-on",
+    "Magang",
+    "Mambalite",
+    "Mancruz",
+    "Pamorangon",
+    "San Isidro",
+  ];
+}
+
+function normalize_barangay_choice(string $raw, array $choices): string {
+  $value = trim($raw);
+  if ($value === "") {
+    return "";
+  }
+  foreach ($choices as $choice) {
+    if (strcasecmp($value, (string)$choice) === 0) {
+      return (string)$choice;
+    }
+  }
+  return "";
+}
+
 function ensure_users_admin_schema(mysqli $conn): void {
   $conn->query(
     "CREATE TABLE IF NOT EXISTS users (
@@ -57,9 +100,21 @@ function ensure_users_admin_schema(mysqli $conn): void {
   if (!has_column($conn, "users", "created_at")) {
     @$conn->query("ALTER TABLE users ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
   }
+  if (!has_column($conn, "users", "barangay_scope")) {
+    @$conn->query("ALTER TABLE users ADD COLUMN barangay_scope VARCHAR(191) NULL DEFAULT NULL");
+  }
+  if (!has_column($conn, "users", "office_scope")) {
+    @$conn->query("ALTER TABLE users ADD COLUMN office_scope VARCHAR(32) NULL DEFAULT NULL");
+  }
+
+  // Backward compatibility for older custom roles.
+  @$conn->query("UPDATE users SET role = 'admin', office_scope = 'borabod' WHERE LOWER(TRIM(role)) = 'borabod'");
+  @$conn->query("UPDATE users SET role = 'admin', office_scope = 'municipality' WHERE LOWER(TRIM(role)) = 'municipality'");
+  @$conn->query("UPDATE users SET office_scope = 'municipality' WHERE role <> 'super_admin' AND (office_scope IS NULL OR TRIM(office_scope) = '')");
 }
 
 ensure_users_admin_schema($conn);
+$barangayChoices = daet_barangays();
 
 $status = trim((string)($_GET["status"] ?? ""));
 $msg = trim((string)($_GET["msg"] ?? ""));
@@ -80,6 +135,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "crea
   $newUsername = trim((string)($_POST["new_username"] ?? ""));
   $newPassword = (string)($_POST["new_password"] ?? "");
   $newRole = trim((string)($_POST["new_role"] ?? "admin"));
+  $newBarangayScope = normalize_barangay_choice((string)($_POST["new_barangay_scope"] ?? ""), $barangayChoices);
+  $newOfficeScope = normalize_office_scope_name((string)($_POST["new_office_scope"] ?? ""));
 
   if (!verify_csrf_token($token)) {
     redirect_super_admin("error", "Invalid request token.");
@@ -92,9 +149,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "crea
     redirect_super_admin("error", "Password must be at least 8 characters.");
   }
 
-  $allowedRoles = ["admin", "user", "super_admin"];
+  $allowedRoles = ["admin", "user", "barangay", "super_admin"];
   if (!in_array($newRole, $allowedRoles, true)) {
     $newRole = "admin";
+  }
+  if ($newRole === "barangay" && $newBarangayScope === "") {
+    redirect_super_admin("error", "Please select a barangay scope for barangay role.");
+  }
+  if ($newRole !== "barangay") {
+    $newBarangayScope = "";
+  }
+  if ($newRole === "super_admin") {
+    $newOfficeScope = "";
+  } elseif ($newOfficeScope === "") {
+    redirect_super_admin("error", "Please select an office for this account.");
   }
 
   $existsStmt = $conn->prepare("SELECT 1 FROM users WHERE `user` = ? LIMIT 1");
@@ -110,11 +178,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "crea
   }
 
   $hash = password_hash($newPassword, PASSWORD_DEFAULT);
-  $insertStmt = $conn->prepare("INSERT INTO users (`user`, `password`, `role`, `created_at`) VALUES (?, ?, ?, UTC_TIMESTAMP())");
+  $insertStmt = $conn->prepare("INSERT INTO users (`user`, `password`, `role`, `barangay_scope`, `office_scope`, `created_at`) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())");
   if (!$insertStmt) {
     redirect_super_admin("error", "Database error: " . $conn->error);
   }
-  $insertStmt->bind_param("sss", $newUsername, $hash, $newRole);
+  $insertStmt->bind_param("sssss", $newUsername, $hash, $newRole, $newBarangayScope, $newOfficeScope);
   if (!$insertStmt->execute()) {
     $err = $insertStmt->error;
     $insertStmt->close();
@@ -122,7 +190,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "crea
   }
   $insertStmt->close();
 
-  audit_log("account_create", "Super admin created account \"" . $newUsername . "\" with role \"" . $newRole . "\".", $authUser !== "" ? $authUser : null, null);
+  $scopeText = ($newRole === "barangay" && $newBarangayScope !== "") ? (" barangay: " . $newBarangayScope . ",") : "";
+  $officeText = ($newOfficeScope !== "") ? (" office: " . ucfirst($newOfficeScope)) : " office: all";
+  audit_log("account_create", "Super admin created account \"" . $newUsername . "\" with role \"" . $newRole . "\" (" . trim($scopeText . $officeText) . ").", $authUser !== "" ? $authUser : null, null);
   redirect_super_admin("success", "Account created successfully.");
 }
 
@@ -131,6 +201,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "upda
   $originalUsername = trim((string)($_POST["original_username"] ?? ""));
   $editUsername = trim((string)($_POST["edit_username"] ?? ""));
   $editRole = trim((string)($_POST["edit_role"] ?? "admin"));
+  $editBarangayScope = normalize_barangay_choice((string)($_POST["edit_barangay_scope"] ?? ""), $barangayChoices);
+  $editOfficeScope = normalize_office_scope_name((string)($_POST["edit_office_scope"] ?? ""));
   $editPassword = (string)($_POST["edit_password"] ?? "");
 
   $extra = "edit_user=" . urlencode($originalUsername) . "#edit-account-section";
@@ -148,9 +220,20 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "upda
     redirect_super_admin("error", "New password must be at least 8 characters.", $extra);
   }
 
-  $allowedRoles = ["admin", "user", "super_admin"];
+  $allowedRoles = ["admin", "user", "barangay", "super_admin"];
   if (!in_array($editRole, $allowedRoles, true)) {
     $editRole = "admin";
+  }
+  if ($editRole === "barangay" && $editBarangayScope === "") {
+    redirect_super_admin("error", "Please select a barangay scope for barangay role.", $extra);
+  }
+  if ($editRole !== "barangay") {
+    $editBarangayScope = "";
+  }
+  if ($editRole === "super_admin") {
+    $editOfficeScope = "";
+  } elseif ($editOfficeScope === "") {
+    redirect_super_admin("error", "Please select an office for this account.", $extra);
   }
   if ($originalUsername === $authUser && $editRole !== "super_admin") {
     redirect_super_admin("error", "You cannot remove your own super admin role.", $extra);
@@ -186,17 +269,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "upda
   try {
     if ($editPassword !== "") {
       $hash = password_hash($editPassword, PASSWORD_DEFAULT);
-      $upStmt = $conn->prepare("UPDATE users SET `user` = ?, `password` = ?, `role` = ? WHERE `user` = ? LIMIT 1");
+      $upStmt = $conn->prepare("UPDATE users SET `user` = ?, `password` = ?, `role` = ?, `barangay_scope` = ?, `office_scope` = ? WHERE `user` = ? LIMIT 1");
       if (!$upStmt) {
         throw new RuntimeException("Database error: " . $conn->error);
       }
-      $upStmt->bind_param("ssss", $editUsername, $hash, $editRole, $originalUsername);
+      $upStmt->bind_param("ssssss", $editUsername, $hash, $editRole, $editBarangayScope, $editOfficeScope, $originalUsername);
     } else {
-      $upStmt = $conn->prepare("UPDATE users SET `user` = ?, `role` = ? WHERE `user` = ? LIMIT 1");
+      $upStmt = $conn->prepare("UPDATE users SET `user` = ?, `role` = ?, `barangay_scope` = ?, `office_scope` = ? WHERE `user` = ? LIMIT 1");
       if (!$upStmt) {
         throw new RuntimeException("Database error: " . $conn->error);
       }
-      $upStmt->bind_param("sss", $editUsername, $editRole, $originalUsername);
+      $upStmt->bind_param("sssss", $editUsername, $editRole, $editBarangayScope, $editOfficeScope, $originalUsername);
     }
     if (!$upStmt->execute()) {
       $err = $upStmt->error;
@@ -230,12 +313,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "upda
   if ($originalUsername === $authUser) {
     $_SESSION["auth_user"] = $editUsername;
     $_SESSION["auth_role"] = $editRole;
+    $_SESSION["auth_office_scope"] = $editOfficeScope;
+    $_SESSION["auth_office_scope_user"] = $editUsername;
+    $_SESSION["auth_barangay_scope"] = $editBarangayScope;
+    $_SESSION["auth_barangay_scope_user"] = $editUsername;
     $authUser = $editUsername;
   }
 
+  $scopeText = ($editRole === "barangay" && $editBarangayScope !== "") ? (" barangay: " . $editBarangayScope . ",") : "";
+  $officeText = ($editOfficeScope !== "") ? (" office: " . ucfirst($editOfficeScope)) : " office: all";
   audit_log(
     "account_update",
-    "Super admin updated account \"" . $originalUsername . "\" to username \"" . $editUsername . "\" with role \"" . $editRole . "\".",
+    "Super admin updated account \"" . $originalUsername . "\" to username \"" . $editUsername . "\" with role \"" . $editRole . "\" (" . trim($scopeText . $officeText) . ").",
     $authUser !== "" ? $authUser : null,
     null
   );
@@ -445,7 +534,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "dele
 $editUser = trim((string)($_GET["edit_user"] ?? ""));
 $editAccount = null;
 if ($editUser !== "") {
-  $editStmt = $conn->prepare("SELECT `user` AS username, `role`, `created_at` FROM users WHERE `user` = ? LIMIT 1");
+  $editStmt = $conn->prepare("SELECT `user` AS username, `role`, `barangay_scope`, `office_scope`, `created_at` FROM users WHERE `user` = ? LIMIT 1");
   if ($editStmt) {
     $editStmt->bind_param("s", $editUser);
     $editStmt->execute();
@@ -601,6 +690,8 @@ $barangayDonutGradient = !empty($barangayGradientParts)
 $accountsSql = "SELECT
                   u.`user` AS username,
                   u.role,
+                  u.barangay_scope,
+                  u.office_scope,
                   u.created_at,
                   CASE
                     WHEN s.username IS NOT NULL AND s.expires_at >= UTC_TIMESTAMP() THEN 'Active'
@@ -610,7 +701,7 @@ $accountsSql = "SELECT
                 FROM users u
                 LEFT JOIN auth_active_sessions s ON s.username = u.`user`
                 LEFT JOIN auth_audit_logs l ON l.username = u.`user`
-                GROUP BY u.`user`, u.role, u.created_at, s.username, s.expires_at
+                GROUP BY u.`user`, u.role, u.barangay_scope, u.office_scope, u.created_at, s.username, s.expires_at
                 ORDER BY u.`user` ASC";
 $accounts = @$conn->query($accountsSql);
 
@@ -1063,7 +1154,7 @@ $saBaseQuery = [
             <div class="accounts-create-disclosure__title">
               <span class="accounts-create-kicker">Account Manager</span>
               <h3>Create Account</h3>
-              <p>Create admin, user, or super_admin credentials in a secure form.</p>
+              <p>Create admin, user, barangay, or super_admin credentials in a secure form.</p>
             </div>
             <div class="accounts-create-disclosure__meta">
               <span class="accounts-create-disclosure__chip">Secure Form</span>
@@ -1073,7 +1164,7 @@ $saBaseQuery = [
           <div class="accounts-create-panel">
             <div class="accounts-create-panel__intro">
               <h4>New Account Setup</h4>
-              <p>Assign username, password, and role. Accounts appear instantly in the table below.</p>
+              <p>Assign username, password, role, and office. Accounts appear instantly in the table below.</p>
             </div>
             <form class="accounts-create-form" method="POST" action="super_admin.php" autocomplete="off">
               <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
@@ -1092,7 +1183,24 @@ $saBaseQuery = [
                   <select id="new_role" name="new_role">
                     <option value="admin">admin</option>
                     <option value="user">user</option>
+                    <option value="barangay">barangay</option>
                     <option value="super_admin">super_admin</option>
+                  </select>
+                </div>
+                <div class="field" id="newOfficeScopeWrap">
+                  <label for="new_office_scope">Office</label>
+                  <select id="new_office_scope" name="new_office_scope">
+                    <option value="municipality" selected>Municipality</option>
+                    <option value="borabod">Borabod</option>
+                  </select>
+                </div>
+                <div class="field field--full hidden" id="newBarangayScopeWrap">
+                  <label for="new_barangay_scope">Barangay Scope</label>
+                  <select id="new_barangay_scope" name="new_barangay_scope">
+                    <option value="" selected>Select barangay</option>
+                    <?php foreach ($barangayChoices as $bChoice): ?>
+                      <option value="<?php echo htmlspecialchars($bChoice); ?>"><?php echo htmlspecialchars($bChoice); ?></option>
+                    <?php endforeach; ?>
                   </select>
                 </div>
               </div>
@@ -1131,10 +1239,18 @@ $saBaseQuery = [
                         $isActive = ((string)($u["current_status"] ?? "") === "Active");
                         $createdAt = format_utc_datetime_for_app((string)($u["created_at"] ?? ""));
                         $lastLogin = format_utc_datetime_for_app((string)($u["last_login_at"] ?? ""));
+                        $roleText = trim((string)($u["role"] ?? ""));
+                        $roleScope = trim((string)($u["barangay_scope"] ?? ""));
+                        $officeScope = normalize_office_scope_name((string)($u["office_scope"] ?? ""));
+                        $officeText = ($officeScope !== "") ? ucfirst($officeScope) : "All";
+                        if ($roleText === "barangay" && $roleScope !== "") {
+                          $roleText .= " (" . $roleScope . ")";
+                        }
+                        $roleText .= " @ " . $officeText;
                       ?>
                       <tr>
                         <td class="strong"><?php echo htmlspecialchars((string)$u["username"]); ?></td>
-                        <td class="mono"><?php echo htmlspecialchars((string)$u["role"]); ?></td>
+                        <td class="mono"><?php echo htmlspecialchars($roleText); ?></td>
                         <td><span class="status-pill <?php echo $isActive ? "status-pill--active" : "status-pill--inactive"; ?>"><?php echo $isActive ? "Active" : "Inactive"; ?></span></td>
                         <td class="mono"><?php echo htmlspecialchars($createdAt !== "" ? $createdAt : "-"); ?></td>
                         <td class="mono"><?php echo htmlspecialchars($lastLogin !== "" ? $lastLogin : "-"); ?></td>
@@ -1167,6 +1283,18 @@ $saBaseQuery = [
         $editCreatedAt = format_utc_datetime_for_app((string)($editAccount["created_at"] ?? ""));
         $editRoleCurrent = (string)($editAccount["role"] ?? "admin");
         $editUsernameCurrent = (string)($editAccount["username"] ?? "");
+        $editBarangayScopeCurrent = normalize_barangay_choice((string)($editAccount["barangay_scope"] ?? ""), $barangayChoices);
+        $editOfficeScopeCurrent = normalize_office_scope_name((string)($editAccount["office_scope"] ?? ""));
+        if (strtolower(trim($editRoleCurrent)) === "borabod") {
+          $editRoleCurrent = "admin";
+          if ($editOfficeScopeCurrent === "") $editOfficeScopeCurrent = "borabod";
+        } elseif (strtolower(trim($editRoleCurrent)) === "municipality") {
+          $editRoleCurrent = "admin";
+          if ($editOfficeScopeCurrent === "") $editOfficeScopeCurrent = "municipality";
+        }
+        if ($editOfficeScopeCurrent === "" && $editRoleCurrent !== "super_admin") {
+          $editOfficeScopeCurrent = "municipality";
+        }
       ?>
       <section id="edit-account-section" class="card section">
         <div class="card__header">
@@ -1189,7 +1317,26 @@ $saBaseQuery = [
                 <select id="edit_role" name="edit_role">
                   <option value="admin" <?php echo $editRoleCurrent === "admin" ? "selected" : ""; ?>>admin</option>
                   <option value="user" <?php echo $editRoleCurrent === "user" ? "selected" : ""; ?>>user</option>
+                  <option value="barangay" <?php echo $editRoleCurrent === "barangay" ? "selected" : ""; ?>>barangay</option>
                   <option value="super_admin" <?php echo $editRoleCurrent === "super_admin" ? "selected" : ""; ?>>super_admin</option>
+                </select>
+              </div>
+              <div class="field" id="editOfficeScopeWrap">
+                <label for="edit_office_scope">Office</label>
+                <select id="edit_office_scope" name="edit_office_scope">
+                  <option value="municipality" <?php echo $editOfficeScopeCurrent === "municipality" ? "selected" : ""; ?>>Municipality</option>
+                  <option value="borabod" <?php echo $editOfficeScopeCurrent === "borabod" ? "selected" : ""; ?>>Borabod</option>
+                </select>
+              </div>
+              <div class="field field--full <?php echo $editRoleCurrent === "barangay" ? "" : "hidden"; ?>" id="editBarangayScopeWrap">
+                <label for="edit_barangay_scope">Barangay Scope</label>
+                <select id="edit_barangay_scope" name="edit_barangay_scope">
+                  <option value="" <?php echo $editBarangayScopeCurrent === "" ? "selected" : ""; ?>>Select barangay</option>
+                  <?php foreach ($barangayChoices as $bChoice): ?>
+                    <option value="<?php echo htmlspecialchars($bChoice); ?>" <?php echo $editBarangayScopeCurrent === $bChoice ? "selected" : ""; ?>>
+                      <?php echo htmlspecialchars($bChoice); ?>
+                    </option>
+                  <?php endforeach; ?>
                 </select>
               </div>
               <div class="field field--full">
@@ -1563,6 +1710,46 @@ $saBaseQuery = [
     })();
   </script>
   <script>
+    (function(){
+      function bindBarangayScope(roleSelectId, wrapId, scopeSelectId) {
+        var roleSelect = document.getElementById(roleSelectId);
+        var wrap = document.getElementById(wrapId);
+        var scopeSelect = document.getElementById(scopeSelectId);
+        if (!roleSelect || !wrap || !scopeSelect) return;
+
+        function sync() {
+          var isBarangayRole = roleSelect.value === 'barangay';
+          wrap.classList.toggle('hidden', !isBarangayRole);
+          scopeSelect.required = isBarangayRole;
+        }
+
+        roleSelect.addEventListener('change', sync);
+        sync();
+      }
+
+      function bindOfficeScope(roleSelectId, wrapId, scopeSelectId) {
+        var roleSelect = document.getElementById(roleSelectId);
+        var wrap = document.getElementById(wrapId);
+        var scopeSelect = document.getElementById(scopeSelectId);
+        if (!roleSelect || !wrap || !scopeSelect) return;
+
+        function sync() {
+          var needsOffice = roleSelect.value !== 'super_admin';
+          wrap.classList.toggle('hidden', !needsOffice);
+          scopeSelect.required = needsOffice;
+        }
+
+        roleSelect.addEventListener('change', sync);
+        sync();
+      }
+
+      bindBarangayScope('new_role', 'newBarangayScopeWrap', 'new_barangay_scope');
+      bindBarangayScope('edit_role', 'editBarangayScopeWrap', 'edit_barangay_scope');
+      bindOfficeScope('new_role', 'newOfficeScopeWrap', 'new_office_scope');
+      bindOfficeScope('edit_role', 'editOfficeScopeWrap', 'edit_office_scope');
+    })();
+  </script>
+  <script>
     (function () {
       var groups = document.querySelectorAll('.js-donut-interactive');
       if (!groups.length) return;
@@ -1743,4 +1930,3 @@ $saBaseQuery = [
   </script>
 </body>
 </html>
-

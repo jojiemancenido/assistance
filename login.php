@@ -124,6 +124,7 @@ $msg = trim((string)($_GET['msg'] ?? ''));
           <div class="field">
             <label for="password">Password</label>
             <input id="password" name="password" type="password" required />
+            
           </div>
 
           <div class="actions">

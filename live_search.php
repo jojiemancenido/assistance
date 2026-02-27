@@ -32,9 +32,11 @@ function extract_specify_from_notes(string &$notes): string {
 
 $q = trim((string)($_GET["q"] ?? ""));
 $typeFilter = trim((string)($_GET["type"] ?? ""));
-$barangayFilter = trim((string)($_GET["barangay"] ?? ""));
+$barangayFilter = effective_barangay_filter(trim((string)($_GET["barangay"] ?? "")));
 $sort = trim((string)($_GET["sort"] ?? "new"));
 $limit = (int)($_GET["limit"] ?? 0);
+$scopedOffice = current_scoped_office();
+$isOfficeScoped = ($scopedOffice !== "");
 $useLimit = ($limit > 0);
 if ($limit > 1000) $limit = 1000;
 
@@ -61,6 +63,12 @@ $orderBy = $allowedSorts[$sort] ?? $allowedSorts["new"];
 $where = [];
 $paramTypes = "";
 $params = [];
+
+if ($isOfficeScoped) {
+  $where[] = "office_scope = ?";
+  $paramTypes .= "s";
+  $params[] = $scopedOffice;
+}
 
 if ($q !== "") {
   $where[] = "name LIKE ?";

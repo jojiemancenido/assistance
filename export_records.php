@@ -133,13 +133,40 @@ if (!in_array($format, ["excel", "pdf"], true)) {
   exit;
 }
 
+$scopedBarangay = current_scoped_barangay();
+$isBarangayScoped = ($scopedBarangay !== "");
+$scopedOffice = current_scoped_office();
+$isOfficeScoped = ($scopedOffice !== "");
+
 $hasTypeSpecify = has_column($conn, "records", "type_specify");
-$sql = "SELECT record_id, name, type, barangay, municipality, province, amount, record_date, month_year, notes";
+$sql = "SELECT record_id, name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes";
 if ($hasTypeSpecify) {
   $sql .= ", type_specify";
 }
-$sql .= " FROM records ORDER BY record_id ASC";
-$rs = @$conn->query($sql);
+$sql .= " FROM records";
+$selectTypes = "";
+$selectParams = [];
+if ($isOfficeScoped) {
+  $sql .= " WHERE office_scope = ?";
+  $selectTypes .= "s";
+  $selectParams[] = $scopedOffice;
+}
+if ($isBarangayScoped) {
+  $sql .= ($isOfficeScoped ? " AND " : " WHERE ") . "barangay = ?";
+  $selectTypes .= "s";
+  $selectParams[] = $scopedBarangay;
+}
+$sql .= " ORDER BY record_id ASC";
+
+$selectStmt = $conn->prepare($sql);
+$rs = null;
+if ($selectStmt) {
+  if (!empty($selectParams)) {
+    $selectStmt->bind_param($selectTypes, ...$selectParams);
+  }
+  $selectStmt->execute();
+  $rs = $selectStmt->get_result();
+}
 
 $rows = [];
 if ($rs) {
@@ -157,6 +184,7 @@ if ($rs) {
       "name" => (string)($r["name"] ?? ""),
       "type_label" => build_type_label((string)($r["type"] ?? ""), $spec),
       "barangay" => (string)($r["barangay"] ?? ""),
+      "office_scope" => normalize_office_scope_name((string)($r["office_scope"] ?? "")),
       "municipality" => (string)($r["municipality"] ?? ""),
       "province" => (string)($r["province"] ?? ""),
       "amount" => (float)($r["amount"] ?? 0),
@@ -165,6 +193,9 @@ if ($rs) {
       "notes" => $notesVal,
     ];
   }
+}
+if ($selectStmt) {
+  $selectStmt->close();
 }
 
 $selectedTypesRaw = $_GET["types"] ?? [];
@@ -214,6 +245,12 @@ if ($format === "excel") {
     <div class="meta">
       <strong>Beneficiary Records Export</strong><br />
       Generated: <?php echo htmlspecialchars(date("Y-m-d h:i:s A") . " " . app_timezone_label()); ?><br />
+      <?php if ($isOfficeScoped): ?>
+        Office scope: <?php echo htmlspecialchars(ucfirst($scopedOffice)); ?><br />
+      <?php endif; ?>
+      <?php if ($isBarangayScoped): ?>
+        Barangay scope: <?php echo htmlspecialchars($scopedBarangay); ?><br />
+      <?php endif; ?>
       Types: <?php echo htmlspecialchars($selectedTypesLabel); ?><br />
       Total rows: <?php echo number_format((float)count($rows)); ?>
     </div>
@@ -223,6 +260,7 @@ if ($format === "excel") {
           <th>ID</th>
           <th>Name</th>
           <th>Type</th>
+          <th>Office</th>
           <th>Barangay</th>
           <th>Municipality</th>
           <th>Province</th>
@@ -239,6 +277,7 @@ if ($format === "excel") {
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["record_id"])); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["name"])); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["type_label"])); ?></td>
+              <td><?php echo htmlspecialchars(safe_excel_cell((string)ucfirst((string)$r["office_scope"]))); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["barangay"])); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["municipality"])); ?></td>
               <td><?php echo htmlspecialchars(safe_excel_cell((string)$r["province"])); ?></td>
@@ -249,7 +288,7 @@ if ($format === "excel") {
             </tr>
           <?php endforeach; ?>
         <?php else: ?>
-          <tr><td colspan="10">No records found.</td></tr>
+          <tr><td colspan="11">No records found.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>
@@ -262,6 +301,12 @@ if ($format === "excel") {
 $lines = [];
 $lines[] = "Beneficiary Records Export";
 $lines[] = "Generated: " . date("Y-m-d h:i:s A") . " " . app_timezone_label();
+if ($isOfficeScoped) {
+  $lines[] = "Office scope: " . ucfirst($scopedOffice);
+}
+if ($isBarangayScoped) {
+  $lines[] = "Barangay scope: " . $scopedBarangay;
+}
 $lines[] = "Types: " . $selectedTypesLabel;
 $lines[] = "Total rows: " . number_format((float)count($rows));
 $lines[] = str_repeat("=", 96);
@@ -271,6 +316,7 @@ if (empty($rows)) {
 } else {
   foreach ($rows as $r) {
     $lines[] = "ID #" . $r["record_id"] . " - " . normalize_pdf_text((string)$r["name"]);
+    $lines[] = "Office: " . normalize_pdf_text((string)ucfirst((string)$r["office_scope"]));
     $lines[] = "Type: " . normalize_pdf_text((string)$r["type_label"]) .
                " | Amount: PHP " . number_format((float)$r["amount"], 2) .
                " | Date: " . normalize_pdf_text((string)$r["record_date"]);

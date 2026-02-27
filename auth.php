@@ -130,7 +130,11 @@ function restore_login_from_cookie(): bool {
   }
 
   $_SESSION['auth_user'] = $username;
-  $_SESSION['auth_role'] = fetch_user_role($username);
+  $_SESSION['auth_role'] = normalized_role_name(fetch_user_role($username));
+  $_SESSION['auth_office_scope'] = fetch_user_office_scope($username);
+  $_SESSION['auth_office_scope_user'] = $username;
+  $_SESSION['auth_barangay_scope'] = fetch_user_barangay_scope($username);
+  $_SESSION['auth_barangay_scope_user'] = $username;
   $_SESSION['auth_session_token'] = $token;
   $_SESSION['last_activity'] = time();
   touch_active_session_slot($username, $token);
@@ -165,19 +169,43 @@ function default_role_for_username(string $username): string {
   return 'admin';
 }
 
-function users_table_has_column(string $column): bool {
+function table_has_column(string $table, string $column): bool {
   global $conn;
-  $sql = "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = ? LIMIT 1";
+  $sql = "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1";
   $stmt = $conn->prepare($sql);
   if (!$stmt) {
     return false;
   }
-  $stmt->bind_param('s', $column);
+  $stmt->bind_param('ss', $table, $column);
   $stmt->execute();
   $result = $stmt->get_result();
   $exists = $result && $result->num_rows > 0;
   $stmt->close();
   return $exists;
+}
+
+function users_table_has_column(string $column): bool {
+  return table_has_column('users', $column);
+}
+
+function ensure_records_office_scope_column(): void {
+  global $conn;
+  static $checked = false;
+
+  if ($checked) {
+    return;
+  }
+  $checked = true;
+
+  if (!isset($conn) || !($conn instanceof mysqli)) {
+    return;
+  }
+
+  if (!table_has_column('records', 'office_scope')) {
+    @$conn->query("ALTER TABLE records ADD COLUMN office_scope VARCHAR(32) NOT NULL DEFAULT 'municipality'");
+  }
+
+  @$conn->query("UPDATE records SET office_scope = 'municipality' WHERE office_scope IS NULL OR TRIM(office_scope) = ''");
 }
 
 function session_timeout_seconds(): int {
@@ -404,19 +432,185 @@ function current_auth_role(): string {
   secure_session_start();
   $role = trim((string)($_SESSION['auth_role'] ?? ''));
   if ($role !== '') {
-    return $role;
+    return normalized_role_name($role);
   }
   $username = current_auth_user();
   if ($username === '') {
     return 'admin';
   }
-  $resolved = fetch_user_role($username);
+  $resolved = normalized_role_name(fetch_user_role($username));
   $_SESSION['auth_role'] = $resolved;
   return $resolved;
 }
 
 function is_super_admin(): bool {
   return current_auth_role() === 'super_admin';
+}
+
+function normalized_role_name(?string $role = null): string {
+  $value = $role;
+  if ($value === null) {
+    $value = current_auth_role();
+  }
+  $roleKey = strtolower(trim((string)$value));
+  if ($roleKey === 'municipality' || $roleKey === 'borabod') {
+    return 'admin';
+  }
+  return $roleKey;
+}
+
+function normalize_office_scope_name(string $office): string {
+  $officeKey = strtolower(trim($office));
+  if ($officeKey === 'borabod') {
+    return 'borabod';
+  }
+  if ($officeKey === 'municipality') {
+    return 'municipality';
+  }
+  return '';
+}
+
+function fetch_user_office_scope(string $username): string {
+  global $conn;
+
+  if ($username === '') {
+    return '';
+  }
+
+  if (!isset($conn) || !($conn instanceof mysqli)) {
+    return '';
+  }
+
+  $roleRaw = strtolower(trim(fetch_user_role($username)));
+  if (normalized_role_name($roleRaw) === 'super_admin') {
+    return '';
+  }
+
+  if (users_table_has_column('office_scope')) {
+    $sql = "SELECT `office_scope` FROM `users` WHERE `user` = ? LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
+      $stmt->bind_param('s', $username);
+      $stmt->execute();
+      $result = $stmt->get_result();
+      $row = $result ? $result->fetch_assoc() : null;
+      $stmt->close();
+      $resolved = normalize_office_scope_name((string)($row['office_scope'] ?? ''));
+      if ($resolved !== '') {
+        return $resolved;
+      }
+    }
+  }
+
+  if ($roleRaw === 'borabod') {
+    return 'borabod';
+  }
+  return 'municipality';
+}
+
+function current_auth_office_scope(): string {
+  secure_session_start();
+  $username = current_auth_user();
+  if ($username === '') {
+    return '';
+  }
+
+  $cachedUser = trim((string)($_SESSION['auth_office_scope_user'] ?? ''));
+  if ($cachedUser === $username && array_key_exists('auth_office_scope', $_SESSION)) {
+    return normalize_office_scope_name((string)$_SESSION['auth_office_scope']);
+  }
+
+  $scope = fetch_user_office_scope($username);
+  $_SESSION['auth_office_scope'] = $scope;
+  $_SESSION['auth_office_scope_user'] = $username;
+  return $scope;
+}
+
+function current_scoped_office(): string {
+  if (is_super_admin()) {
+    return '';
+  }
+  $scope = current_auth_office_scope();
+  if ($scope !== '') {
+    return $scope;
+  }
+  return 'municipality';
+}
+
+function fetch_user_barangay_scope(string $username): string {
+  global $conn;
+
+  if ($username === '') {
+    return '';
+  }
+
+  if (!isset($conn) || !($conn instanceof mysqli)) {
+    return '';
+  }
+
+  if (!users_table_has_column('barangay_scope')) {
+    return '';
+  }
+
+  $sql = "SELECT `barangay_scope` FROM `users` WHERE `user` = ? LIMIT 1";
+  $stmt = $conn->prepare($sql);
+  if (!$stmt) {
+    return '';
+  }
+
+  $stmt->bind_param('s', $username);
+  $stmt->execute();
+  $result = $stmt->get_result();
+  $row = $result ? $result->fetch_assoc() : null;
+  $stmt->close();
+
+  return trim((string)($row['barangay_scope'] ?? ''));
+}
+
+function current_auth_barangay_scope(): string {
+  secure_session_start();
+  $username = current_auth_user();
+  if ($username === '') {
+    return '';
+  }
+
+  $cachedUser = trim((string)($_SESSION['auth_barangay_scope_user'] ?? ''));
+  if ($cachedUser === $username && array_key_exists('auth_barangay_scope', $_SESSION)) {
+    return trim((string)$_SESSION['auth_barangay_scope']);
+  }
+
+  $scope = fetch_user_barangay_scope($username);
+  $_SESSION['auth_barangay_scope'] = $scope;
+  $_SESSION['auth_barangay_scope_user'] = $username;
+  return $scope;
+}
+
+function scoped_barangay_for_role(?string $role = null): string {
+  $roleKey = normalized_role_name((string)($role ?? current_auth_role()));
+  if ($roleKey === 'barangay') {
+    return current_auth_barangay_scope();
+  }
+  return '';
+}
+
+function current_scoped_barangay(): string {
+  return scoped_barangay_for_role(current_auth_role());
+}
+
+function effective_barangay_filter(string $requestedBarangay = ''): string {
+  $scope = current_scoped_barangay();
+  if ($scope !== '') {
+    return $scope;
+  }
+  return trim($requestedBarangay);
+}
+
+function can_access_barangay_for_current_role(string $barangay): bool {
+  $scope = current_scoped_barangay();
+  if ($scope === '') {
+    return true;
+  }
+  return strcasecmp(trim($barangay), $scope) === 0;
 }
 
 function client_ip_address(): string {
@@ -557,8 +751,18 @@ function is_logged_in(): bool {
     return false;
   }
 
+  ensure_records_office_scope_column();
+
   if (empty($_SESSION['auth_role'])) {
-    $_SESSION['auth_role'] = fetch_user_role($username);
+    $_SESSION['auth_role'] = normalized_role_name(fetch_user_role($username));
+  }
+  if (!array_key_exists('auth_office_scope', $_SESSION) || trim((string)($_SESSION['auth_office_scope_user'] ?? '')) !== $username) {
+    $_SESSION['auth_office_scope'] = fetch_user_office_scope($username);
+    $_SESSION['auth_office_scope_user'] = $username;
+  }
+  if (!array_key_exists('auth_barangay_scope', $_SESSION) || trim((string)($_SESSION['auth_barangay_scope_user'] ?? '')) !== $username) {
+    $_SESSION['auth_barangay_scope'] = fetch_user_barangay_scope($username);
+    $_SESSION['auth_barangay_scope_user'] = $username;
   }
 
   $token = (string)($_SESSION['auth_session_token'] ?? '');
@@ -592,7 +796,11 @@ function login_user(string $username): bool {
   }
 
   $_SESSION['auth_user'] = $username;
-  $_SESSION['auth_role'] = fetch_user_role($username);
+  $_SESSION['auth_role'] = normalized_role_name(fetch_user_role($username));
+  $_SESSION['auth_office_scope'] = fetch_user_office_scope($username);
+  $_SESSION['auth_office_scope_user'] = $username;
+  $_SESSION['auth_barangay_scope'] = fetch_user_barangay_scope($username);
+  $_SESSION['auth_barangay_scope_user'] = $username;
   $_SESSION['auth_session_token'] = $token;
   $_SESSION['last_activity'] = time();
   set_persistent_auth_cookie($username, $token);
@@ -608,7 +816,11 @@ function login_user_with_takeover(string $username): bool {
   }
 
   $_SESSION['auth_user'] = $username;
-  $_SESSION['auth_role'] = fetch_user_role($username);
+  $_SESSION['auth_role'] = normalized_role_name(fetch_user_role($username));
+  $_SESSION['auth_office_scope'] = fetch_user_office_scope($username);
+  $_SESSION['auth_office_scope_user'] = $username;
+  $_SESSION['auth_barangay_scope'] = fetch_user_barangay_scope($username);
+  $_SESSION['auth_barangay_scope_user'] = $username;
   $_SESSION['auth_session_token'] = $token;
   $_SESSION['last_activity'] = time();
   set_persistent_auth_cookie($username, $token);

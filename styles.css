@@ -2197,7 +2197,7 @@ body.superadmin-page .sa-legend-meta{
   border-radius:50%;
   background: radial-gradient(circle, rgba(253,182,29,.18) 0%, rgba(253,182,29,.09) 48%, rgba(253,182,29,0) 75%);
   filter: blur(.3px);
-  animation: startup-ring-pulse 2s ease-in-out infinite;
+  animation: startup-ring-pulse 5s ease-in-out infinite;
 }
 
 .startup-splash__logo{

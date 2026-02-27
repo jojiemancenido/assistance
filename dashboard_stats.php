@@ -41,10 +41,40 @@ function build_type_label(string $type, string $spec): string {
   return $type;
 }
 
+$scopedBarangay = current_scoped_barangay();
+$isBarangayScoped = ($scopedBarangay !== "");
+$scopedOffice = current_scoped_office();
+$isOfficeScoped = ($scopedOffice !== "");
+
 $totalRecords = 0;
-$res = @$conn->query("SELECT COUNT(*) AS total_records FROM records");
-if ($res && $row = $res->fetch_assoc()) {
-  $totalRecords = (int)($row["total_records"] ?? 0);
+$countSql = "SELECT COUNT(*) AS total_records FROM records";
+$countWhere = [];
+$countTypes = "";
+$countParams = [];
+if ($isOfficeScoped) {
+  $countWhere[] = "office_scope = ?";
+  $countTypes .= "s";
+  $countParams[] = $scopedOffice;
+}
+if ($isBarangayScoped) {
+  $countWhere[] = "barangay = ?";
+  $countTypes .= "s";
+  $countParams[] = $scopedBarangay;
+}
+if (!empty($countWhere)) {
+  $countSql .= " WHERE " . implode(" AND ", $countWhere);
+}
+$countStmt = $conn->prepare($countSql);
+if ($countStmt) {
+  if (!empty($countParams)) {
+    $countStmt->bind_param($countTypes, ...$countParams);
+  }
+  $countStmt->execute();
+  $res = $countStmt->get_result();
+  if ($res && $row = $res->fetch_assoc()) {
+    $totalRecords = (int)($row["total_records"] ?? 0);
+  }
+  $countStmt->close();
 }
 
 cleanup_expired_active_sessions();
@@ -85,7 +115,27 @@ if ($hasTypeSpecify) {
   $scanSql .= ", type_specify";
 }
 $scanSql .= " FROM records";
-$scanRs = @$conn->query($scanSql);
+$scanTypes = "";
+$scanParams = [];
+if ($isOfficeScoped) {
+  $scanSql .= " WHERE office_scope = ?";
+  $scanTypes .= "s";
+  $scanParams[] = $scopedOffice;
+}
+if ($isBarangayScoped) {
+  $scanSql .= ($isOfficeScoped ? " AND " : " WHERE ") . "barangay = ?";
+  $scanTypes .= "s";
+  $scanParams[] = $scopedBarangay;
+}
+$scanStmt = $conn->prepare($scanSql);
+$scanRs = null;
+if ($scanStmt) {
+  if (!empty($scanParams)) {
+    $scanStmt->bind_param($scanTypes, ...$scanParams);
+  }
+  $scanStmt->execute();
+  $scanRs = $scanStmt->get_result();
+}
 if ($scanRs) {
   while ($row = $scanRs->fetch_assoc()) {
     $type = (string)($row["type"] ?? "");
@@ -104,6 +154,9 @@ if ($scanRs) {
     }
     $typeTotals[$label] += 1;
   }
+}
+if ($scanStmt) {
+  $scanStmt->close();
 }
 
 foreach ($types as $t) {

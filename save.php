@@ -11,6 +11,12 @@ $amountRaw = $_POST["amount"] ?? "";
 $record_date = trim($_POST["record_date"] ?? date("Y-m-d"));
 $notes = trim($_POST["notes"] ?? "");
 $csrfToken = $_POST["csrf_token"] ?? "";
+$scopedBarangay = current_scoped_barangay();
+if ($scopedBarangay !== "") {
+  $barangay = $scopedBarangay;
+}
+$scopedOffice = current_scoped_office();
+$officeScope = ($scopedOffice !== "") ? $scopedOffice : "municipality";
 
 // Auto-set (don’t trust client)
 $municipality = "Daet";
@@ -73,7 +79,32 @@ if (!$hasTypeSpecify) {
 
 if ($hasTypeSpecify) {
   $stmt = $conn->prepare(
-    "INSERT INTO records (name, type, type_specify, barangay, municipality, province, amount, record_date, month_year, notes)
+    "INSERT INTO records (name, type, type_specify, barangay, office_scope, municipality, province, amount, record_date, month_year, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  );
+
+  if (!$stmt) {
+    redirect_with_msg("error", "Database error: " . $conn->error);
+    exit;
+  }
+
+  $stmt->bind_param(
+    "sssssssdsss",
+    $name,
+    $type,
+    $type_specify,
+    $barangay,
+    $officeScope,
+    $municipality,
+    $province,
+    $amount,
+    $record_date,
+    $month_year,
+    $notes
+  );
+} else {
+  $stmt = $conn->prepare(
+    "INSERT INTO records (name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
 
@@ -86,31 +117,8 @@ if ($hasTypeSpecify) {
     "ssssssdsss",
     $name,
     $type,
-    $type_specify,
     $barangay,
-    $municipality,
-    $province,
-    $amount,
-    $record_date,
-    $month_year,
-    $notes
-  );
-} else {
-  $stmt = $conn->prepare(
-    "INSERT INTO records (name, type, barangay, municipality, province, amount, record_date, month_year, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  );
-
-  if (!$stmt) {
-    redirect_with_msg("error", "Database error: " . $conn->error);
-    exit;
-  }
-
-  $stmt->bind_param(
-    "sssssdsss",
-    $name,
-    $type,
-    $barangay,
+    $officeScope,
     $municipality,
     $province,
     $amount,

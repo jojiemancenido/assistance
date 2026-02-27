@@ -90,6 +90,10 @@ function with_status_message(string $url, string $status, string $message): stri
 }
 
 $isSuperAdmin = is_super_admin();
+$scopedBarangay = current_scoped_barangay();
+$isBarangayScoped = ($scopedBarangay !== "");
+$scopedOffice = current_scoped_office();
+$isOfficeScoped = ($scopedOffice !== "");
 $recordId = (int)($_GET["record_id"] ?? 0);
 $returnTo = normalize_return_to((string)($_GET["return_to"] ?? ""), $isSuperAdmin);
 $status = trim((string)($_GET["status"] ?? ""));
@@ -106,19 +110,36 @@ if ($hasTypeSpecify) {
   $selectCols .= ", type_specify";
 }
 
-$stmt = $conn->prepare("SELECT $selectCols FROM records WHERE record_id = ? LIMIT 1");
+$recordSql = "SELECT $selectCols FROM records WHERE record_id = ?";
+if ($isOfficeScoped) {
+  $recordSql .= " AND office_scope = ?";
+}
+if ($isBarangayScoped) {
+  $recordSql .= " AND barangay = ?";
+}
+$recordSql .= " LIMIT 1";
+
+$stmt = $conn->prepare($recordSql);
 if (!$stmt) {
   header("Location: " . with_status_message($returnTo, "error", "Database error: " . $conn->error));
   exit;
 }
-$stmt->bind_param("i", $recordId);
+if ($isOfficeScoped && $isBarangayScoped) {
+  $stmt->bind_param("iss", $recordId, $scopedOffice, $scopedBarangay);
+} elseif ($isOfficeScoped) {
+  $stmt->bind_param("is", $recordId, $scopedOffice);
+} elseif ($isBarangayScoped) {
+  $stmt->bind_param("is", $recordId, $scopedBarangay);
+} else {
+  $stmt->bind_param("i", $recordId);
+}
 $stmt->execute();
 $result = $stmt->get_result();
 $row = $result ? $result->fetch_assoc() : null;
 $stmt->close();
 
 if (!$row) {
-  header("Location: " . with_status_message($returnTo, "error", "Record not found."));
+  header("Location: " . with_status_message($returnTo, "error", "Record not found or access denied."));
   exit;
 }
 
@@ -138,9 +159,10 @@ if ($hasTypeSpecify) {
 
 $canDeleteRecord = is_super_admin();
 $backDashboardHref = $returnTo;
+$visibleBarangays = $isBarangayScoped ? [$scopedBarangay] : $barangays;
 
 if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
-  $barangays[] = $barangay;
+  $visibleBarangays[] = $barangay;
 }
 ?>
 <!doctype html>
@@ -220,14 +242,19 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
 
             <div class="field field--full">
               <label for="barangay">Barangay</label>
-              <select id="barangay" name="barangay" required>
-                <option value="" disabled <?php echo $barangay === "" ? "selected" : ""; ?>>Select barangay</option>
-                <?php foreach ($barangays as $b): ?>
-                  <option value="<?php echo htmlspecialchars($b); ?>" <?php echo $barangay === $b ? "selected" : ""; ?>>
-                    <?php echo htmlspecialchars($b); ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
+              <?php if ($isBarangayScoped): ?>
+                <input id="barangay" class="readonly" type="text" value="<?php echo htmlspecialchars($scopedBarangay); ?>" readonly />
+                <input type="hidden" name="barangay" value="<?php echo htmlspecialchars($scopedBarangay); ?>" />
+              <?php else: ?>
+                <select id="barangay" name="barangay" required>
+                  <option value="" disabled <?php echo $barangay === "" ? "selected" : ""; ?>>Select barangay</option>
+                  <?php foreach ($visibleBarangays as $b): ?>
+                    <option value="<?php echo htmlspecialchars($b); ?>" <?php echo $barangay === $b ? "selected" : ""; ?>>
+                      <?php echo htmlspecialchars($b); ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              <?php endif; ?>
             </div>
 
             <div class="field">
@@ -278,5 +305,3 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
   </script>
 </body>
 </html>
-
-
