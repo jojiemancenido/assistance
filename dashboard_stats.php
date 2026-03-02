@@ -45,6 +45,7 @@ $scopedBarangay = current_scoped_barangay();
 $isBarangayScoped = ($scopedBarangay !== "");
 $scopedOffice = current_scoped_office();
 $isOfficeScoped = ($scopedOffice !== "");
+$isMaifDashboard = is_maif_office_scope($scopedOffice);
 
 $totalRecords = 0;
 $countSql = "SELECT COUNT(*) AS total_records FROM records";
@@ -107,7 +108,7 @@ if (ensure_active_session_table()) {
   }
 }
 
-$types = ["Medical", "Burial", "Livelihood", "Other"];
+$types = $isMaifDashboard ? ["Medical"] : ["Medical", "Burial", "Livelihood", "Other"];
 $typeTotals = [];
 $hasTypeSpecify = has_column($conn, "records", "type_specify");
 $scanSql = "SELECT type, notes";

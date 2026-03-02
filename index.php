@@ -4,7 +4,7 @@ require_login();
 require_once "db.php";
 
 // Types of assistance
-$types = ["Medical", "Burial", "Livelihood", "Other"]; 
+$baseTypes = ["Medical", "Burial", "Livelihood", "Other"];
 
 // 25 Barangays of Daet
 $barangays = [
@@ -86,7 +86,11 @@ $scopedBarangay = current_scoped_barangay();
 $isBarangayScoped = ($scopedBarangay !== "");
 $scopedOffice = current_scoped_office();
 $isOfficeScoped = ($scopedOffice !== "");
+$isMaifDashboard = is_maif_office_scope($scopedOffice);
+$types = $isMaifDashboard ? ["Medical"] : $baseTypes;
 $visibleBarangays = $isBarangayScoped ? [$scopedBarangay] : $barangays;
+$maifMunicipalities = maif_municipality_choices();
+$defaultMaifMunicipality = !empty($maifMunicipalities) ? (string)$maifMunicipalities[0] : "Daet";
 $duplicateWarning = (isset($_GET["duplicate_warning"]) && $_GET["duplicate_warning"] === "1");
 $duplicateCount = max(0, (int)($_GET["duplicate_count"] ?? 0));
 $duplicateName = trim((string)($_GET["duplicate_name"] ?? ""));
@@ -110,7 +114,23 @@ $formTypeSpecify = trim((string)($draftSession["type_specify"] ?? ""));
 $formAmount = trim((string)($draftSession["amount"] ?? ""));
 $formRecordDate = trim((string)($draftSession["record_date"] ?? $today));
 $formBarangay = trim((string)($draftSession["barangay"] ?? ($isBarangayScoped ? $scopedBarangay : "")));
+$formMunicipalityRaw = trim((string)($draftSession["municipality"] ?? ($isMaifDashboard ? $defaultMaifMunicipality : "Daet")));
+$formMunicipality = $isMaifDashboard ? normalize_maif_municipality($formMunicipalityRaw) : "Daet";
+if ($isMaifDashboard && $formMunicipality === "") {
+  $formMunicipality = $defaultMaifMunicipality;
+}
 $formNotes = trim((string)($draftSession["notes"] ?? ""));
+$formAge = trim((string)($draftSession["age"] ?? ""));
+$formBirthdate = trim((string)($draftSession["birthdate"] ?? ""));
+$formContactNumber = trim((string)($draftSession["contact_number"] ?? ""));
+$formDiagnosis = trim((string)($draftSession["diagnosis"] ?? ""));
+$formHospital = trim((string)($draftSession["hospital"] ?? ""));
+$formContactPerson = trim((string)($draftSession["contact_person"] ?? ""));
+if ($isMaifDashboard) {
+  $formType = "Medical";
+  $formTypeSpecify = "";
+}
+$maifBarangaySuggestions = $isMaifDashboard ? maif_designated_barangay_suggestions($formMunicipality) : [];
 
 cleanup_expired_active_sessions();
 $isCurrentSessionActive = ($authUser !== "" && $authToken !== "" && has_active_session_slot($authUser, $authToken));
@@ -327,17 +347,19 @@ $limit = 0;
 $where = [];
 $paramTypes = "";
 $params = [];
+$isCrossOfficeSearch = ($q !== "");
 
-if ($isOfficeScoped) {
+if ($isOfficeScoped && !$isCrossOfficeSearch) {
   $where[] = "office_scope = ?";
   $paramTypes .= "s";
   $params[] = $scopedOffice;
 }
 
 if ($q !== "") {
-  $where[] = "name LIKE ?";
-  $paramTypes .= "s";
-  $params[] = "%" . $q . "%";
+  $searchTerm = "%" . $q . "%";
+  $where[] = "(name LIKE ? OR barangay LIKE ? OR municipality LIKE ? OR office_scope LIKE ? OR notes LIKE ? OR contact_number LIKE ? OR diagnosis LIKE ? OR hospital LIKE ? OR contact_person LIKE ?)";
+  $paramTypes .= "sssssssss";
+  array_push($params, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm);
 }
 
 if ($typeFilter !== "") {
@@ -370,7 +392,10 @@ if ($barangayFilter !== "") {
   $params[] = $barangayFilter;
 }
 
-$selectCols = "record_id, name, type, barangay, municipality, province, amount, record_date, month_year, notes";
+$selectCols = "record_id, name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes";
+if ($isMaifDashboard) {
+  $selectCols .= ", age, birthdate, contact_number, diagnosis, hospital, contact_person";
+}
 if ($hasTypeSpecify) {
   $selectCols .= ", type_specify";
 }
@@ -516,7 +541,7 @@ $baseQuery = [
         </div>
         <?php if ($isOfficeScoped): ?>
           <div class="user-chip">
-            Office <strong><?php echo htmlspecialchars(ucfirst($scopedOffice)); ?></strong>
+            Office <strong><?php echo htmlspecialchars($scopedOffice === "maif" ? "MAIF" : ucfirst($scopedOffice)); ?></strong>
           </div>
         <?php endif; ?>
         <div class="badge">
@@ -580,20 +605,26 @@ $baseQuery = [
 
               <div class="field">
                 <label for="type">Type of Assistance</label>
-                <select id="type" name="type" required>
-                  <option value="" disabled <?php echo ($formType === "") ? "selected" : ""; ?>>Select type</option>
-                  <?php foreach ($types as $t): ?>
-                    <option value="<?php echo htmlspecialchars($t); ?>" <?php echo ($formType === $t) ? "selected" : ""; ?>><?php echo htmlspecialchars($t); ?></option>
-                  <?php endforeach; ?>
-                </select>
+                <?php if ($isMaifDashboard): ?>
+                  <input class="readonly" type="text" value="Medical" readonly />
+                  <input id="type" type="hidden" name="type" value="Medical" />
+                <?php else: ?>
+                  <select id="type" name="type" required>
+                    <option value="" disabled <?php echo ($formType === "") ? "selected" : ""; ?>>Select type</option>
+                    <?php foreach ($types as $t): ?>
+                      <option value="<?php echo htmlspecialchars($t); ?>" <?php echo ($formType === $t) ? "selected" : ""; ?>><?php echo htmlspecialchars($t); ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                <?php endif; ?>
               </div>
 
-              <!-- Only shows when type = Other -->
-              <div class="field field--full <?php echo ($formType === "Other") ? "" : "hidden"; ?>" id="typeSpecifyWrap">
-                <label for="type_specify">Specify Type (if Other)</label>
-                <input id="type_specify" type="text" name="type_specify" placeholder="e.g., Educational, Food, Transportation..." value="<?php echo htmlspecialchars($formTypeSpecify); ?>" />
-                <div class="help">Required only when you choose <b>Other</b>.</div>
-              </div>
+              <?php if (!$isMaifDashboard): ?>
+                <div class="field field--full <?php echo ($formType === "Other") ? "" : "hidden"; ?>" id="typeSpecifyWrap">
+                  <label for="type_specify">Specify Type (if Other)</label>
+                  <input id="type_specify" type="text" name="type_specify" placeholder="e.g., Educational, Food, Transportation..." value="<?php echo htmlspecialchars($formTypeSpecify); ?>" />
+                  <div class="help">Required only when you choose <b>Other</b>.</div>
+                </div>
+              <?php endif; ?>
 
               <div class="field">
                 <label for="amount">Amount (PHP)</label>
@@ -606,8 +637,17 @@ $baseQuery = [
               </div>
 
               <div class="field field--full">
-                <label for="barangay">Barangay</label>
-                <?php if ($isBarangayScoped): ?>
+                <label for="barangay"><?php echo $isMaifDashboard ? "Designated Barangay" : "Barangay"; ?></label>
+                <?php if ($isMaifDashboard): ?>
+                  <select id="barangay" name="barangay" required>
+                    <option value="" disabled <?php echo ($formBarangay === "") ? "selected" : ""; ?>>Select designated barangay</option>
+                    <?php foreach ($maifBarangaySuggestions as $maifBarangay): ?>
+                      <option value="<?php echo htmlspecialchars($maifBarangay); ?>" <?php echo ($formBarangay === $maifBarangay) ? "selected" : ""; ?>>
+                        <?php echo htmlspecialchars($maifBarangay); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                <?php elseif ($isBarangayScoped): ?>
                   <input id="barangay" class="readonly" type="text" value="<?php echo htmlspecialchars($scopedBarangay); ?>" readonly />
                   <input type="hidden" name="barangay" value="<?php echo htmlspecialchars($scopedBarangay); ?>" />
                 <?php else: ?>
@@ -619,17 +659,66 @@ $baseQuery = [
                   </select>
                 <?php endif; ?>
               </div>
+            </div>
 
-              <div class="field">
-                <label>Municipality</label>
-                <input class="readonly" type="text" value="Daet" readonly />
+            <?php if ($isMaifDashboard): ?>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="municipality">Municipality</label>
+                  <select id="municipality" name="municipality" required>
+                    <?php foreach ($maifMunicipalities as $maifMunicipality): ?>
+                      <option value="<?php echo htmlspecialchars($maifMunicipality); ?>" <?php echo ($formMunicipality === $maifMunicipality) ? "selected" : ""; ?>>
+                        <?php echo htmlspecialchars($maifMunicipality); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+
+                <div class="field">
+                  <label for="age">Age</label>
+                  <input id="age" type="number" min="0" max="150" name="age" placeholder="Optional" value="<?php echo htmlspecialchars($formAge); ?>" />
+                </div>
+
+                <div class="field">
+                  <label for="birthdate">Birthdate</label>
+                  <input id="birthdate" type="date" name="birthdate" value="<?php echo htmlspecialchars($formBirthdate); ?>" />
+                </div>
+
+                <div class="field field--full">
+                  <label for="contact_number">Contact Number</label>
+                  <input id="contact_number" type="text" name="contact_number" placeholder="Optional contact number" value="<?php echo htmlspecialchars($formContactNumber); ?>" />
+                </div>
+
+                <div class="field field--full">
+                  <label for="diagnosis">Diagnosis</label>
+                  <textarea id="diagnosis" name="diagnosis" placeholder="Enter diagnosis details"><?php echo htmlspecialchars($formDiagnosis); ?></textarea>
+                </div>
+
+                <div class="field">
+                  <label for="hospital">Hospital</label>
+                  <input id="hospital" type="text" name="hospital" placeholder="Hospital name" value="<?php echo htmlspecialchars($formHospital); ?>" />
+                </div>
+
+                <div class="field">
+                  <label for="contact_person">Contact Person (if applicable)</label>
+                  <input id="contact_person" type="text" name="contact_person" placeholder="Optional" value="<?php echo htmlspecialchars($formContactPerson); ?>" />
+                </div>
               </div>
+            <?php else: ?>
+              <div class="form-grid">
+                <div class="field">
+                  <label>Municipality</label>
+                  <input class="readonly" type="text" value="Daet" readonly />
+                </div>
 
-              <div class="field">
-                <label>Province</label>
-                <input class="readonly" type="text" value="Camarines Norte" readonly />
+                <div class="field">
+                  <label>Province</label>
+                  <input class="readonly" type="text" value="Camarines Norte" readonly />
+                </div>
               </div>
+            <?php endif; ?>
 
+            <div class="form-grid">
               <div class="field field--full">
                 <label for="notes">Notes (optional)</label>
                 <textarea id="notes" name="notes" placeholder="Any notes about this assistance/record..."><?php echo htmlspecialchars($formNotes); ?></textarea>
@@ -700,15 +789,17 @@ $baseQuery = [
             </div>
           <?php endif; ?>
 
-          <div class="import-block">
-            <h3 class="card__title">Import from Excel/CSV</h3>
-            <p class="card__sub">Accepted columns: Name, Barangay, Type of Assitance, Amount, Date.</p>
-            <form method="POST" action="import.php" enctype="multipart/form-data" class="import-form">
-              <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
-              <input type="file" name="import_file" accept=".csv,.xlsx" required />
-              <button class="btn btn--secondary" type="submit">Import File</button>
-            </form>
-          </div>
+          <?php if (!$isMaifDashboard): ?>
+            <div class="import-block">
+              <h3 class="card__title">Import from Excel/CSV</h3>
+              <p class="card__sub">Accepted columns: Name, Barangay, Type of Assitance, Amount, Date.</p>
+              <form method="POST" action="import.php" enctype="multipart/form-data" class="import-form">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+                <input type="file" name="import_file" accept=".csv,.xlsx" required />
+                <button class="btn btn--secondary" type="submit">Import File</button>
+              </form>
+            </div>
+          <?php endif; ?>
 
         </div>
       </section>
@@ -848,7 +939,7 @@ $baseQuery = [
         </div>
 
         <form class="search" method="GET" action="index.php#records-section">
-          <input id="live-search-input" type="text" name="q" value="<?php echo htmlspecialchars($q); ?>" placeholder="Search by name..." autocomplete="off" />
+          <input id="live-search-input" type="text" name="q" value="<?php echo htmlspecialchars($q); ?>" placeholder="Search name, barangay, municipality, office..." autocomplete="off" />
           <input type="hidden" name="type" value="<?php echo htmlspecialchars($typeFilter); ?>" />
           <input type="hidden" name="barangay" value="<?php echo htmlspecialchars($barangayFilter); ?>" />
           <input type="hidden" name="sort" value="<?php echo htmlspecialchars($sort); ?>" />
@@ -898,7 +989,7 @@ $baseQuery = [
                   <th>
                     <span class="th-with-menu">
                       <span>Barangay</span>
-                      <?php if (!$isBarangayScoped): ?>
+                      <?php if (!$isBarangayScoped && !$isMaifDashboard): ?>
                         <details class="th-menu">
                           <summary class="th-menu__summary" aria-label="Barangay filter"></summary>
                           <div class="th-menu__list">
@@ -911,6 +1002,16 @@ $baseQuery = [
                       <?php endif; ?>
                     </span>
                   </th>
+                  <th>Office</th>
+                  <?php if ($isMaifDashboard): ?>
+                    <th>Municipality</th>
+                    <th>Age</th>
+                    <th>Birthdate</th>
+                    <th>Contact Number</th>
+                    <th>Diagnosis</th>
+                    <th>Hospital</th>
+                    <th>Contact Person</th>
+                  <?php endif; ?>
                   <th class="col-amount">
                     <span class="amount-heading">
                       <span>Amount</span>
@@ -992,6 +1093,16 @@ $baseQuery = [
                       <td class="strong"><?php echo htmlspecialchars($r["name"]); ?></td>
                       <td><?php echo htmlspecialchars($typeLabel); ?></td>
                       <td><?php echo htmlspecialchars($r["barangay"] ?? ""); ?></td>
+                      <td><?php echo htmlspecialchars(((string)($r["office_scope"] ?? "")) === "maif" ? "MAIF" : ucfirst((string)($r["office_scope"] ?? "municipality"))); ?></td>
+                      <?php if ($isMaifDashboard): ?>
+                        <td><?php echo htmlspecialchars((string)($r["municipality"] ?? "")); ?></td>
+                        <td class="mono"><?php echo htmlspecialchars((string)(($r["age"] ?? "") !== null ? (string)($r["age"] ?? "") : "")); ?></td>
+                        <td class="mono"><?php echo htmlspecialchars((string)($r["birthdate"] ?? "")); ?></td>
+                        <td><?php echo htmlspecialchars((string)($r["contact_number"] ?? "")); ?></td>
+                        <td class="note"><?php echo htmlspecialchars((string)($r["diagnosis"] ?? "")); ?></td>
+                        <td><?php echo htmlspecialchars((string)($r["hospital"] ?? "")); ?></td>
+                        <td><?php echo htmlspecialchars((string)($r["contact_person"] ?? "")); ?></td>
+                      <?php endif; ?>
                       <td class="mono col-amount"><?php echo htmlspecialchars($amountDisplay); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($r["record_date"]); ?></td>
                       <td class="mono"><?php echo htmlspecialchars($r["month_year"]); ?></td>
@@ -1005,6 +1116,14 @@ $baseQuery = [
                             data-record-name="<?php echo htmlspecialchars((string)$r["name"], ENT_QUOTES); ?>"
                             data-record-type="<?php echo htmlspecialchars($typeLabel, ENT_QUOTES); ?>"
                             data-record-barangay="<?php echo htmlspecialchars((string)($r["barangay"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-office="<?php echo htmlspecialchars(((string)($r["office_scope"] ?? "")) === "maif" ? "MAIF" : ucfirst((string)($r["office_scope"] ?? "municipality")), ENT_QUOTES); ?>"
+                            data-record-municipality="<?php echo htmlspecialchars((string)($r["municipality"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-age="<?php echo htmlspecialchars((string)($r["age"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-birthdate="<?php echo htmlspecialchars((string)($r["birthdate"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-contact-number="<?php echo htmlspecialchars((string)($r["contact_number"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-diagnosis="<?php echo htmlspecialchars((string)($r["diagnosis"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-hospital="<?php echo htmlspecialchars((string)($r["hospital"] ?? ""), ENT_QUOTES); ?>"
+                            data-record-contact-person="<?php echo htmlspecialchars((string)($r["contact_person"] ?? ""), ENT_QUOTES); ?>"
                             data-record-amount="<?php echo htmlspecialchars($amountDisplay, ENT_QUOTES); ?>"
                             data-record-date="<?php echo htmlspecialchars((string)($r["record_date"] ?? ""), ENT_QUOTES); ?>"
                             data-record-month-year="<?php echo htmlspecialchars((string)($r["month_year"] ?? ""), ENT_QUOTES); ?>"
@@ -1019,7 +1138,7 @@ $baseQuery = [
                   <?php endwhile; ?>
                 <?php else: ?>
                   <tr>
-                    <td colspan="9" class="muted">No records found.</td>
+                    <td colspan="<?php echo $isMaifDashboard ? "17" : "10"; ?>" class="muted">No records found.</td>
                   </tr>
                 <?php endif; ?>
               </tbody>
@@ -1043,6 +1162,16 @@ $baseQuery = [
           <div class="record-view-item"><span>Name</span><strong id="view-record-name">-</strong></div>
           <div class="record-view-item"><span>Type</span><strong id="view-record-type">-</strong></div>
           <div class="record-view-item"><span>Barangay</span><strong id="view-record-barangay">-</strong></div>
+          <div class="record-view-item"><span>Office</span><strong id="view-record-office">-</strong></div>
+          <?php if ($isMaifDashboard): ?>
+            <div class="record-view-item"><span>Municipality</span><strong id="view-record-municipality">-</strong></div>
+            <div class="record-view-item"><span>Age</span><strong id="view-record-age">-</strong></div>
+            <div class="record-view-item"><span>Birthdate</span><strong id="view-record-birthdate">-</strong></div>
+            <div class="record-view-item"><span>Contact Number</span><strong id="view-record-contact-number">-</strong></div>
+            <div class="record-view-item record-view-item--full"><span>Diagnosis</span><strong id="view-record-diagnosis">-</strong></div>
+            <div class="record-view-item"><span>Hospital</span><strong id="view-record-hospital">-</strong></div>
+            <div class="record-view-item"><span>Contact Person</span><strong id="view-record-contact-person">-</strong></div>
+          <?php endif; ?>
           <div class="record-view-item"><span>Amount</span><strong id="view-record-amount">-</strong></div>
           <div class="record-view-item"><span>Date</span><strong id="view-record-date">-</strong></div>
           <div class="record-view-item"><span>Year-Month</span><strong id="view-record-month-year">-</strong></div>
@@ -1084,6 +1213,44 @@ $baseQuery = [
 
       typeSel.addEventListener('change', sync);
       sync();
+    })();
+  </script>
+  <script>
+    (function(){
+      const municipality = document.getElementById('municipality');
+      const barangaySelect = document.getElementById('barangay');
+      if (!municipality || !barangaySelect) return;
+
+      const optionsByMunicipality = <?php echo json_encode(maif_barangay_options_by_municipality(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+
+      function syncBarangayOptions(){
+        const current = municipality.value;
+        const options = Array.isArray(optionsByMunicipality[current]) ? optionsByMunicipality[current] : [];
+        const previousValue = barangaySelect.value;
+        let html = '<option value="" disabled>Select designated barangay</option>';
+
+        if (options.length === 0) {
+          html += '<option value="" disabled>No barangay list configured yet</option>';
+        } else {
+          html += options.map(function(option){
+            const escaped = String(option)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;');
+            const selected = previousValue === option ? ' selected' : '';
+            return '<option value="' + escaped + '"' + selected + '>' + escaped + '</option>';
+          }).join('');
+        }
+
+        barangaySelect.innerHTML = html;
+        if (!options.includes(previousValue)) {
+          barangaySelect.selectedIndex = 0;
+        }
+      }
+
+      municipality.addEventListener('change', syncBarangayOptions);
+      syncBarangayOptions();
     })();
   </script>
   <script>
@@ -1151,6 +1318,14 @@ $baseQuery = [
         name: document.getElementById('view-record-name'),
         type: document.getElementById('view-record-type'),
         barangay: document.getElementById('view-record-barangay'),
+        office: document.getElementById('view-record-office'),
+        municipality: document.getElementById('view-record-municipality'),
+        age: document.getElementById('view-record-age'),
+        birthdate: document.getElementById('view-record-birthdate'),
+        contactNumber: document.getElementById('view-record-contact-number'),
+        diagnosis: document.getElementById('view-record-diagnosis'),
+        hospital: document.getElementById('view-record-hospital'),
+        contactPerson: document.getElementById('view-record-contact-person'),
         amount: document.getElementById('view-record-amount'),
         date: document.getElementById('view-record-date'),
         monthYear: document.getElementById('view-record-month-year'),
@@ -1168,6 +1343,14 @@ $baseQuery = [
         setField(fields.name, button.getAttribute('data-record-name'));
         setField(fields.type, button.getAttribute('data-record-type'));
         setField(fields.barangay, button.getAttribute('data-record-barangay'));
+        setField(fields.office, button.getAttribute('data-record-office'));
+        setField(fields.municipality, button.getAttribute('data-record-municipality'));
+        setField(fields.age, button.getAttribute('data-record-age'));
+        setField(fields.birthdate, button.getAttribute('data-record-birthdate'));
+        setField(fields.contactNumber, button.getAttribute('data-record-contact-number'));
+        setField(fields.diagnosis, button.getAttribute('data-record-diagnosis'));
+        setField(fields.hospital, button.getAttribute('data-record-hospital'));
+        setField(fields.contactPerson, button.getAttribute('data-record-contact-person'));
         setField(fields.amount, button.getAttribute('data-record-amount'));
         setField(fields.date, button.getAttribute('data-record-date'));
         setField(fields.monthYear, button.getAttribute('data-record-month-year'));
@@ -1358,7 +1541,7 @@ $baseQuery = [
 
       function renderRows(items, query){
         if (!Array.isArray(items) || items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" class="muted">No records found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="<?php echo $isMaifDashboard ? "17" : "10"; ?>" class="muted">No records found.</td></tr>';
           if (subtitle) {
             subtitle.textContent = buildSubtitleForCount(0, query);
           }
@@ -1372,16 +1555,36 @@ $baseQuery = [
             ' data-record-name="' + escapeHtml(row.name) + '"' +
             ' data-record-type="' + escapeHtml(row.type_label) + '"' +
             ' data-record-barangay="' + escapeHtml(row.barangay) + '"' +
+            ' data-record-office="' + escapeHtml(row.office_display) + '"' +
+            ' data-record-municipality="' + escapeHtml(row.municipality) + '"' +
+            ' data-record-age="' + escapeHtml(row.age) + '"' +
+            ' data-record-birthdate="' + escapeHtml(row.birthdate) + '"' +
+            ' data-record-contact-number="' + escapeHtml(row.contact_number) + '"' +
+            ' data-record-diagnosis="' + escapeHtml(row.diagnosis) + '"' +
+            ' data-record-hospital="' + escapeHtml(row.hospital) + '"' +
+            ' data-record-contact-person="' + escapeHtml(row.contact_person) + '"' +
             ' data-record-amount="' + escapeHtml(row.amount_display) + '"' +
             ' data-record-date="' + escapeHtml(row.record_date) + '"' +
             ' data-record-month-year="' + escapeHtml(row.month_year) + '"' +
             ' data-record-notes="' + escapeHtml(row.notes) + '"';
+
+          const maifCells = <?php echo $isMaifDashboard ? "true" : "false"; ?>
+            ? '<td>' + escapeHtml(row.municipality) + '</td>' +
+              '<td class="mono">' + escapeHtml(row.age) + '</td>' +
+              '<td class="mono">' + escapeHtml(row.birthdate) + '</td>' +
+              '<td>' + escapeHtml(row.contact_number) + '</td>' +
+              '<td class="note">' + escapeHtml(row.diagnosis) + '</td>' +
+              '<td>' + escapeHtml(row.hospital) + '</td>' +
+              '<td>' + escapeHtml(row.contact_person) + '</td>'
+            : '';
 
           return '<tr>' +
             '<td class="mono">' + escapeHtml(row.record_id) + '</td>' +
             '<td class="strong">' + escapeHtml(row.name) + '</td>' +
             '<td>' + escapeHtml(row.type_label) + '</td>' +
             '<td>' + escapeHtml(row.barangay) + '</td>' +
+            '<td>' + escapeHtml(row.office_display) + '</td>' +
+            maifCells +
             '<td class="mono col-amount">' + escapeHtml(row.amount_display) + '</td>' +
             '<td class="mono">' + escapeHtml(row.record_date) + '</td>' +
             '<td class="mono">' + escapeHtml(row.month_year) + '</td>' +

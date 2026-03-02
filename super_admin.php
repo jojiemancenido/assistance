@@ -110,6 +110,7 @@ function ensure_users_admin_schema(mysqli $conn): void {
   // Backward compatibility for older custom roles.
   @$conn->query("UPDATE users SET role = 'admin', office_scope = 'borabod' WHERE LOWER(TRIM(role)) = 'borabod'");
   @$conn->query("UPDATE users SET role = 'admin', office_scope = 'municipality' WHERE LOWER(TRIM(role)) = 'municipality'");
+  @$conn->query("UPDATE users SET office_scope = 'maif' WHERE LOWER(TRIM(role)) = 'maif' AND (office_scope IS NULL OR TRIM(office_scope) = '')");
   @$conn->query("UPDATE users SET office_scope = 'municipality' WHERE role <> 'super_admin' AND (office_scope IS NULL OR TRIM(office_scope) = '')");
 }
 
@@ -149,7 +150,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "crea
     redirect_super_admin("error", "Password must be at least 8 characters.");
   }
 
-  $allowedRoles = ["admin", "user", "barangay", "super_admin"];
+  $allowedRoles = ["admin", "user", "barangay", "maif", "super_admin"];
   if (!in_array($newRole, $allowedRoles, true)) {
     $newRole = "admin";
   }
@@ -159,7 +160,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "crea
   if ($newRole !== "barangay") {
     $newBarangayScope = "";
   }
-  if ($newRole === "super_admin") {
+  if ($newRole === "maif") {
+    $newOfficeScope = "maif";
+  } elseif ($newRole === "super_admin") {
     $newOfficeScope = "";
   } elseif ($newOfficeScope === "") {
     redirect_super_admin("error", "Please select an office for this account.");
@@ -191,7 +194,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "crea
   $insertStmt->close();
 
   $scopeText = ($newRole === "barangay" && $newBarangayScope !== "") ? (" barangay: " . $newBarangayScope . ",") : "";
-  $officeText = ($newOfficeScope !== "") ? (" office: " . ucfirst($newOfficeScope)) : " office: all";
+  $officeText = ($newOfficeScope !== "") ? (" office: " . ($newOfficeScope === "maif" ? "MAIF" : ucfirst($newOfficeScope))) : " office: all";
   audit_log("account_create", "Super admin created account \"" . $newUsername . "\" with role \"" . $newRole . "\" (" . trim($scopeText . $officeText) . ").", $authUser !== "" ? $authUser : null, null);
   redirect_super_admin("success", "Account created successfully.");
 }
@@ -220,7 +223,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "upda
     redirect_super_admin("error", "New password must be at least 8 characters.", $extra);
   }
 
-  $allowedRoles = ["admin", "user", "barangay", "super_admin"];
+  $allowedRoles = ["admin", "user", "barangay", "maif", "super_admin"];
   if (!in_array($editRole, $allowedRoles, true)) {
     $editRole = "admin";
   }
@@ -230,7 +233,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "upda
   if ($editRole !== "barangay") {
     $editBarangayScope = "";
   }
-  if ($editRole === "super_admin") {
+  if ($editRole === "maif") {
+    $editOfficeScope = "maif";
+  } elseif ($editRole === "super_admin") {
     $editOfficeScope = "";
   } elseif ($editOfficeScope === "") {
     redirect_super_admin("error", "Please select an office for this account.", $extra);
@@ -321,7 +326,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (($_POST["action"] ?? "") === "upda
   }
 
   $scopeText = ($editRole === "barangay" && $editBarangayScope !== "") ? (" barangay: " . $editBarangayScope . ",") : "";
-  $officeText = ($editOfficeScope !== "") ? (" office: " . ucfirst($editOfficeScope)) : " office: all";
+  $officeText = ($editOfficeScope !== "") ? (" office: " . ($editOfficeScope === "maif" ? "MAIF" : ucfirst($editOfficeScope))) : " office: all";
   audit_log(
     "account_update",
     "Super admin updated account \"" . $originalUsername . "\" to username \"" . $editUsername . "\" with role \"" . $editRole . "\" (" . trim($scopeText . $officeText) . ").",
@@ -1184,6 +1189,7 @@ $saBaseQuery = [
                     <option value="admin">admin</option>
                     <option value="user">user</option>
                     <option value="barangay">barangay</option>
+                    <option value="maif">MAIF</option>
                     <option value="super_admin">super_admin</option>
                   </select>
                 </div>
@@ -1192,6 +1198,7 @@ $saBaseQuery = [
                   <select id="new_office_scope" name="new_office_scope">
                     <option value="municipality" selected>Municipality</option>
                     <option value="borabod">Borabod</option>
+                    <option value="maif">MAIF</option>
                   </select>
                 </div>
                 <div class="field field--full hidden" id="newBarangayScopeWrap">
@@ -1242,7 +1249,10 @@ $saBaseQuery = [
                         $roleText = trim((string)($u["role"] ?? ""));
                         $roleScope = trim((string)($u["barangay_scope"] ?? ""));
                         $officeScope = normalize_office_scope_name((string)($u["office_scope"] ?? ""));
-                        $officeText = ($officeScope !== "") ? ucfirst($officeScope) : "All";
+                        $officeText = ($officeScope !== "") ? ($officeScope === "maif" ? "MAIF" : ucfirst($officeScope)) : "All";
+                        if ($roleText === "maif") {
+                          $roleText = "MAIF";
+                        }
                         if ($roleText === "barangay" && $roleScope !== "") {
                           $roleText .= " (" . $roleScope . ")";
                         }
@@ -1291,6 +1301,8 @@ $saBaseQuery = [
         } elseif (strtolower(trim($editRoleCurrent)) === "municipality") {
           $editRoleCurrent = "admin";
           if ($editOfficeScopeCurrent === "") $editOfficeScopeCurrent = "municipality";
+        } elseif (strtolower(trim($editRoleCurrent)) === "maif") {
+          if ($editOfficeScopeCurrent === "") $editOfficeScopeCurrent = "maif";
         }
         if ($editOfficeScopeCurrent === "" && $editRoleCurrent !== "super_admin") {
           $editOfficeScopeCurrent = "municipality";
@@ -1318,6 +1330,7 @@ $saBaseQuery = [
                   <option value="admin" <?php echo $editRoleCurrent === "admin" ? "selected" : ""; ?>>admin</option>
                   <option value="user" <?php echo $editRoleCurrent === "user" ? "selected" : ""; ?>>user</option>
                   <option value="barangay" <?php echo $editRoleCurrent === "barangay" ? "selected" : ""; ?>>barangay</option>
+                  <option value="maif" <?php echo $editRoleCurrent === "maif" ? "selected" : ""; ?>>MAIF</option>
                   <option value="super_admin" <?php echo $editRoleCurrent === "super_admin" ? "selected" : ""; ?>>super_admin</option>
                 </select>
               </div>
@@ -1326,6 +1339,7 @@ $saBaseQuery = [
                 <select id="edit_office_scope" name="edit_office_scope">
                   <option value="municipality" <?php echo $editOfficeScopeCurrent === "municipality" ? "selected" : ""; ?>>Municipality</option>
                   <option value="borabod" <?php echo $editOfficeScopeCurrent === "borabod" ? "selected" : ""; ?>>Borabod</option>
+                  <option value="maif" <?php echo $editOfficeScopeCurrent === "maif" ? "selected" : ""; ?>>MAIF</option>
                 </select>
               </div>
               <div class="field field--full <?php echo $editRoleCurrent === "barangay" ? "" : "hidden"; ?>" id="editBarangayScopeWrap">
@@ -1735,8 +1749,12 @@ $saBaseQuery = [
 
         function sync() {
           var needsOffice = roleSelect.value !== 'super_admin';
+          var forceMaif = roleSelect.value === 'maif';
           wrap.classList.toggle('hidden', !needsOffice);
           scopeSelect.required = needsOffice;
+          if (forceMaif) {
+            scopeSelect.value = 'maif';
+          }
         }
 
         roleSelect.addEventListener('change', sync);

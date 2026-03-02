@@ -37,6 +37,7 @@ $sort = trim((string)($_GET["sort"] ?? "new"));
 $limit = (int)($_GET["limit"] ?? 0);
 $scopedOffice = current_scoped_office();
 $isOfficeScoped = ($scopedOffice !== "");
+$isMaifDashboard = is_maif_office_scope($scopedOffice);
 $useLimit = ($limit > 0);
 if ($limit > 1000) $limit = 1000;
 
@@ -63,17 +64,19 @@ $orderBy = $allowedSorts[$sort] ?? $allowedSorts["new"];
 $where = [];
 $paramTypes = "";
 $params = [];
+$isCrossOfficeSearch = ($q !== "");
 
-if ($isOfficeScoped) {
+if ($isOfficeScoped && !$isCrossOfficeSearch) {
   $where[] = "office_scope = ?";
   $paramTypes .= "s";
   $params[] = $scopedOffice;
 }
 
 if ($q !== "") {
-  $where[] = "name LIKE ?";
-  $paramTypes .= "s";
-  $params[] = "%" . $q . "%";
+  $searchTerm = "%" . $q . "%";
+  $where[] = "(name LIKE ? OR barangay LIKE ? OR municipality LIKE ? OR office_scope LIKE ? OR notes LIKE ? OR contact_number LIKE ? OR diagnosis LIKE ? OR hospital LIKE ? OR contact_person LIKE ?)";
+  $paramTypes .= "sssssssss";
+  array_push($params, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm);
 }
 
 if ($typeFilter !== "") {
@@ -104,7 +107,10 @@ if ($barangayFilter !== "") {
   $params[] = $barangayFilter;
 }
 
-$selectCols = "record_id, name, type, barangay, amount, record_date, month_year, notes";
+$selectCols = "record_id, name, type, barangay, office_scope, municipality, amount, record_date, month_year, notes";
+if ($isMaifDashboard) {
+  $selectCols .= ", age, birthdate, contact_number, diagnosis, hospital, contact_person";
+}
 if ($hasTypeSpecify) {
   $selectCols .= ", type_specify";
 }
@@ -152,6 +158,14 @@ while ($row = $result->fetch_assoc()) {
     "name" => (string)($row["name"] ?? ""),
     "type_label" => $typeLabel,
     "barangay" => (string)($row["barangay"] ?? ""),
+    "office_display" => ((string)($row["office_scope"] ?? "")) === "maif" ? "MAIF" : ucfirst((string)($row["office_scope"] ?? "municipality")),
+    "municipality" => (string)($row["municipality"] ?? ""),
+    "age" => (string)($row["age"] ?? ""),
+    "birthdate" => (string)($row["birthdate"] ?? ""),
+    "contact_number" => (string)($row["contact_number"] ?? ""),
+    "diagnosis" => $isMaifDashboard ? (string)($row["diagnosis"] ?? "") : "",
+    "hospital" => (string)($row["hospital"] ?? ""),
+    "contact_person" => (string)($row["contact_person"] ?? ""),
     "amount_display" => "PHP " . number_format((float)($row["amount"] ?? 0), 2),
     "record_date" => (string)($row["record_date"] ?? ""),
     "month_year" => (string)($row["month_year"] ?? ""),

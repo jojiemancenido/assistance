@@ -10,6 +10,12 @@ $barangay = trim($_POST["barangay"] ?? "");
 $amountRaw = $_POST["amount"] ?? "";
 $record_date = trim($_POST["record_date"] ?? date("Y-m-d"));
 $notes = trim($_POST["notes"] ?? "");
+$ageRaw = trim((string)($_POST["age"] ?? ""));
+$birthdate = trim((string)($_POST["birthdate"] ?? ""));
+$contactNumber = trim((string)($_POST["contact_number"] ?? ""));
+$diagnosis = trim((string)($_POST["diagnosis"] ?? ""));
+$hospital = trim((string)($_POST["hospital"] ?? ""));
+$contactPerson = trim((string)($_POST["contact_person"] ?? ""));
 $csrfToken = $_POST["csrf_token"] ?? "";
 $scopedBarangay = current_scoped_barangay();
 if ($scopedBarangay !== "") {
@@ -17,9 +23,12 @@ if ($scopedBarangay !== "") {
 }
 $scopedOffice = current_scoped_office();
 $officeScope = ($scopedOffice !== "") ? $scopedOffice : "municipality";
+$isMaifOffice = is_maif_office_scope($officeScope);
 
 // Auto-set (don’t trust client)
-$municipality = "Daet";
+$municipality = $isMaifOffice
+  ? normalize_maif_municipality((string)($_POST["municipality"] ?? ""))
+  : "Daet";
 $province = "Camarines Norte";
 
 function has_column(mysqli $conn, string $table, string $column): bool {
@@ -52,13 +61,25 @@ if (!verify_csrf_token($csrfToken)) {
   exit;
 }
 
+if ($isMaifOffice) {
+  $type = "Medical";
+  $type_specify = "";
+}
+
 if ($name === "" || $type === "" || $barangay === "" || $amountRaw === "" || !is_numeric($amountRaw)) {
   redirect_with_msg("error", "Please fill out all required fields correctly.");
   exit;
 }
 
-if ($type === "Other" && $type_specify === "") {
+if (!$isMaifOffice && $type === "Other" && $type_specify === "") {
   redirect_with_msg("error", "Please specify the Type of Assistance when you choose Other.");
+  exit;
+}
+if ($type !== "Other") {
+  $type_specify = "";
+}
+if ($isMaifOffice && $municipality === "") {
+  redirect_with_msg("error", "Please select a municipality for the MAIF entry.");
   exit;
 }
 
@@ -68,10 +89,49 @@ if ($amount < 0) {
   exit;
 }
 
+$age = null;
+if ($ageRaw !== "") {
+  if (!preg_match('/^\d{1,3}$/', $ageRaw)) {
+    redirect_with_msg("error", "Age must be a whole number.");
+    exit;
+  }
+  $age = (int)$ageRaw;
+  if ($age < 0 || $age > 150) {
+    redirect_with_msg("error", "Age must be between 0 and 150.");
+    exit;
+  }
+}
+
 $ts = strtotime($record_date);
 if ($ts === false) {
   redirect_with_msg("error", "Invalid date.");
   exit;
+}
+
+if (!$isMaifOffice) {
+  $age = null;
+  $birthdate = "";
+  $contactNumber = "";
+  $diagnosis = "";
+  $hospital = "";
+  $contactPerson = "";
+}
+
+if ($birthdate !== "") {
+  $birthTs = strtotime($birthdate);
+  if ($birthTs === false) {
+    redirect_with_msg("error", "Invalid birthdate.");
+    exit;
+  }
+  if ($birthTs > strtotime(date("Y-m-d"))) {
+    redirect_with_msg("error", "Birthdate cannot be in the future.");
+    exit;
+  }
+  if ($age === null) {
+    $birthDateObj = new DateTimeImmutable(date("Y-m-d", $birthTs));
+    $todayObj = new DateTimeImmutable(date("Y-m-d"));
+    $age = $birthDateObj->diff($todayObj)->y;
+  }
 }
 
 $month_year = date("Y-m", $ts);
@@ -127,9 +187,16 @@ if (!$confirmDuplicate && $duplicateCount > 0) {
     "type" => $type,
     "type_specify" => $type_specify,
     "barangay" => $barangay,
+    "municipality" => $municipality,
     "amount" => $amountRaw,
     "record_date" => $record_date,
     "notes" => $notes,
+    "age" => ($age === null) ? "" : (string)$age,
+    "birthdate" => $birthdate,
+    "contact_number" => $contactNumber,
+    "diagnosis" => $diagnosis,
+    "hospital" => $hospital,
+    "contact_person" => $contactPerson,
   ];
   redirect_to_entry();
 }
@@ -144,8 +211,8 @@ if (!$hasTypeSpecify) {
 
 if ($hasTypeSpecify) {
   $stmt = $conn->prepare(
-    "INSERT INTO records (name, type, type_specify, barangay, office_scope, municipality, province, amount, record_date, month_year, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO records (name, type, type_specify, barangay, office_scope, municipality, province, amount, record_date, month_year, notes, age, birthdate, contact_number, diagnosis, hospital, contact_person)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
 
   if (!$stmt) {
@@ -154,7 +221,7 @@ if ($hasTypeSpecify) {
   }
 
   $stmt->bind_param(
-    "sssssssdsss",
+    "sssssssdsssssssss",
     $name,
     $type,
     $type_specify,
@@ -165,12 +232,18 @@ if ($hasTypeSpecify) {
     $amount,
     $record_date,
     $month_year,
-    $notes
+    $notes,
+    $age,
+    $birthdate,
+    $contactNumber,
+    $diagnosis,
+    $hospital,
+    $contactPerson
   );
 } else {
   $stmt = $conn->prepare(
-    "INSERT INTO records (name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO records (name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes, age, birthdate, contact_number, diagnosis, hospital, contact_person)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
 
   if (!$stmt) {
@@ -179,7 +252,7 @@ if ($hasTypeSpecify) {
   }
 
   $stmt->bind_param(
-    "ssssssdsss",
+    "ssssssdsssssssss",
     $name,
     $type,
     $barangay,
@@ -189,7 +262,13 @@ if ($hasTypeSpecify) {
     $amount,
     $record_date,
     $month_year,
-    $notes
+    $notes,
+    $age,
+    $birthdate,
+    $contactNumber,
+    $diagnosis,
+    $hospital,
+    $contactPerson
   );
 }
 

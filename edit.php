@@ -3,7 +3,7 @@ require_once "auth.php";
 require_login();
 require_once "db.php";
 
-$types = ["Medical", "Burial", "Livelihood", "Other"];
+$baseTypes = ["Medical", "Burial", "Livelihood", "Other"];
 $barangays = [
   "Barangay 1",
   "Barangay 2 (Pasig)",
@@ -105,7 +105,7 @@ if ($recordId <= 0) {
 }
 
 $hasTypeSpecify = has_column($conn, "records", "type_specify");
-$selectCols = "record_id, name, type, barangay, amount, record_date, notes";
+$selectCols = "record_id, name, type, barangay, amount, record_date, notes, office_scope, municipality, province, age, birthdate, contact_number, diagnosis, hospital, contact_person";
 if ($hasTypeSpecify) {
   $selectCols .= ", type_specify";
 }
@@ -149,12 +149,38 @@ $barangay = trim((string)($row["barangay"] ?? ""));
 $amount = (string)($row["amount"] ?? "");
 $recordDate = trim((string)($row["record_date"] ?? date("Y-m-d")));
 $notes = (string)($row["notes"] ?? "");
+$recordOfficeScope = normalize_office_scope_name((string)($row["office_scope"] ?? ""));
+if ($recordOfficeScope === "") {
+  $recordOfficeScope = "municipality";
+}
+$isMaifRecord = is_maif_office_scope($recordOfficeScope);
+$types = $isMaifRecord ? ["Medical"] : $baseTypes;
+$maifMunicipalities = maif_municipality_choices();
+$defaultMaifMunicipality = !empty($maifMunicipalities) ? (string)$maifMunicipalities[0] : "Daet";
+$municipality = $isMaifRecord
+  ? normalize_maif_municipality((string)($row["municipality"] ?? ""))
+  : trim((string)($row["municipality"] ?? "Daet"));
+if ($isMaifRecord && $municipality === "") {
+  $municipality = $defaultMaifMunicipality;
+}
+$province = trim((string)($row["province"] ?? "Camarines Norte"));
+$age = trim((string)($row["age"] ?? ""));
+$birthdate = trim((string)($row["birthdate"] ?? ""));
+$contactNumber = trim((string)($row["contact_number"] ?? ""));
+$diagnosis = trim((string)($row["diagnosis"] ?? ""));
+$hospital = trim((string)($row["hospital"] ?? ""));
+$contactPerson = trim((string)($row["contact_person"] ?? ""));
+$maifBarangaySuggestions = $isMaifRecord ? maif_designated_barangay_suggestions($municipality) : [];
 $typeSpecify = "";
 
 if ($hasTypeSpecify) {
   $typeSpecify = trim((string)($row["type_specify"] ?? ""));
 } else {
   $typeSpecify = extract_specify_from_notes($notes);
+}
+if ($isMaifRecord) {
+  $type = "Medical";
+  $typeSpecify = "";
 }
 
 $canDeleteRecord = is_super_admin();
@@ -214,21 +240,28 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
 
             <div class="field">
               <label for="type">Type of Assistance</label>
-              <select id="type" name="type" required>
-                <option value="" disabled <?php echo $type === "" ? "selected" : ""; ?>>Select type</option>
-                <?php foreach ($types as $t): ?>
-                  <option value="<?php echo htmlspecialchars($t); ?>" <?php echo $type === $t ? "selected" : ""; ?>>
-                    <?php echo htmlspecialchars($t); ?>
-                  </option>
-                <?php endforeach; ?>
-              </select>
+              <?php if ($isMaifRecord): ?>
+                <input class="readonly" type="text" value="Medical" readonly />
+                <input id="type" type="hidden" name="type" value="Medical" />
+              <?php else: ?>
+                <select id="type" name="type" required>
+                  <option value="" disabled <?php echo $type === "" ? "selected" : ""; ?>>Select type</option>
+                  <?php foreach ($types as $t): ?>
+                    <option value="<?php echo htmlspecialchars($t); ?>" <?php echo $type === $t ? "selected" : ""; ?>>
+                      <?php echo htmlspecialchars($t); ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              <?php endif; ?>
             </div>
 
-            <div class="field field--full <?php echo $type === "Other" ? "" : "hidden"; ?>" id="typeSpecifyWrap">
-              <label for="type_specify">Specify Type (if Other)</label>
-              <input id="type_specify" type="text" name="type_specify" value="<?php echo htmlspecialchars($typeSpecify); ?>" />
-              <div class="help">Required only when you choose <b>Other</b>.</div>
-            </div>
+            <?php if (!$isMaifRecord): ?>
+              <div class="field field--full <?php echo $type === "Other" ? "" : "hidden"; ?>" id="typeSpecifyWrap">
+                <label for="type_specify">Specify Type (if Other)</label>
+                <input id="type_specify" type="text" name="type_specify" value="<?php echo htmlspecialchars($typeSpecify); ?>" />
+                <div class="help">Required only when you choose <b>Other</b>.</div>
+              </div>
+            <?php endif; ?>
 
             <div class="field">
               <label for="amount">Amount (PHP)</label>
@@ -241,8 +274,17 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
             </div>
 
             <div class="field field--full">
-              <label for="barangay">Barangay</label>
-              <?php if ($isBarangayScoped): ?>
+              <label for="barangay"><?php echo $isMaifRecord ? "Designated Barangay" : "Barangay"; ?></label>
+              <?php if ($isMaifRecord): ?>
+                <select id="barangay" name="barangay" required>
+                  <option value="" disabled <?php echo ($barangay === "") ? "selected" : ""; ?>>Select designated barangay</option>
+                  <?php foreach ($maifBarangaySuggestions as $maifBarangay): ?>
+                    <option value="<?php echo htmlspecialchars($maifBarangay); ?>" <?php echo ($barangay === $maifBarangay) ? "selected" : ""; ?>>
+                      <?php echo htmlspecialchars($maifBarangay); ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              <?php elseif ($isBarangayScoped): ?>
                 <input id="barangay" class="readonly" type="text" value="<?php echo htmlspecialchars($scopedBarangay); ?>" readonly />
                 <input type="hidden" name="barangay" value="<?php echo htmlspecialchars($scopedBarangay); ?>" />
               <?php else: ?>
@@ -257,15 +299,58 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
               <?php endif; ?>
             </div>
 
-            <div class="field">
-              <label>Municipality</label>
-              <input class="readonly" type="text" value="Daet" readonly />
-            </div>
+            <?php if ($isMaifRecord): ?>
+              <div class="field">
+                <label for="municipality">Municipality</label>
+                <select id="municipality" name="municipality" required>
+                  <?php foreach ($maifMunicipalities as $maifMunicipality): ?>
+                    <option value="<?php echo htmlspecialchars($maifMunicipality); ?>" <?php echo $municipality === $maifMunicipality ? "selected" : ""; ?>>
+                      <?php echo htmlspecialchars($maifMunicipality); ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </div>
 
-            <div class="field">
-              <label>Province</label>
-              <input class="readonly" type="text" value="Camarines Norte" readonly />
-            </div>
+              <div class="field">
+                <label for="age">Age</label>
+                <input id="age" type="number" min="0" max="150" name="age" value="<?php echo htmlspecialchars($age); ?>" />
+              </div>
+
+              <div class="field">
+                <label for="birthdate">Birthdate</label>
+                <input id="birthdate" type="date" name="birthdate" value="<?php echo htmlspecialchars($birthdate); ?>" />
+              </div>
+
+              <div class="field field--full">
+                <label for="contact_number">Contact Number</label>
+                <input id="contact_number" type="text" name="contact_number" value="<?php echo htmlspecialchars($contactNumber); ?>" />
+              </div>
+
+              <div class="field field--full">
+                <label for="diagnosis">Diagnosis</label>
+                <textarea id="diagnosis" name="diagnosis"><?php echo htmlspecialchars($diagnosis); ?></textarea>
+              </div>
+
+              <div class="field">
+                <label for="hospital">Hospital</label>
+                <input id="hospital" type="text" name="hospital" value="<?php echo htmlspecialchars($hospital); ?>" />
+              </div>
+
+              <div class="field">
+                <label for="contact_person">Contact Person (if applicable)</label>
+                <input id="contact_person" type="text" name="contact_person" value="<?php echo htmlspecialchars($contactPerson); ?>" />
+              </div>
+            <?php else: ?>
+              <div class="field">
+                <label>Municipality</label>
+                <input class="readonly" type="text" value="<?php echo htmlspecialchars($municipality !== "" ? $municipality : "Daet"); ?>" readonly />
+              </div>
+
+              <div class="field">
+                <label>Province</label>
+                <input class="readonly" type="text" value="<?php echo htmlspecialchars($province !== "" ? $province : "Camarines Norte"); ?>" readonly />
+              </div>
+            <?php endif; ?>
 
             <div class="field field--full">
               <label for="notes">Notes (optional)</label>
@@ -285,6 +370,44 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
     </section>
   </div>
 
+  <script>
+    (function(){
+      const municipality = document.getElementById('municipality');
+      const barangaySelect = document.getElementById('barangay');
+      if (!municipality || !barangaySelect) return;
+
+      const optionsByMunicipality = <?php echo json_encode(maif_barangay_options_by_municipality(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+
+      function syncBarangayOptions(){
+        const current = municipality.value;
+        const options = Array.isArray(optionsByMunicipality[current]) ? optionsByMunicipality[current] : [];
+        const previousValue = barangaySelect.value;
+        let html = '<option value="" disabled>Select designated barangay</option>';
+
+        if (options.length === 0) {
+          html += '<option value="" disabled>No barangay list configured yet</option>';
+        } else {
+          html += options.map(function(option){
+            const escaped = String(option)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;');
+            const selected = previousValue === option ? ' selected' : '';
+            return '<option value="' + escaped + '"' + selected + '>' + escaped + '</option>';
+          }).join('');
+        }
+
+        barangaySelect.innerHTML = html;
+        if (!options.includes(previousValue)) {
+          barangaySelect.selectedIndex = 0;
+        }
+      }
+
+      municipality.addEventListener('change', syncBarangayOptions);
+      syncBarangayOptions();
+    })();
+  </script>
   <script>
     (function(){
       const typeSel = document.getElementById('type');

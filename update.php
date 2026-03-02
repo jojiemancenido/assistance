@@ -69,6 +69,13 @@ $barangay = trim((string)($_POST["barangay"] ?? ""));
 $amountRaw = $_POST["amount"] ?? "";
 $recordDate = trim((string)($_POST["record_date"] ?? date("Y-m-d")));
 $notes = trim((string)($_POST["notes"] ?? ""));
+$postedMunicipality = trim((string)($_POST["municipality"] ?? ""));
+$ageRaw = trim((string)($_POST["age"] ?? ""));
+$birthdate = trim((string)($_POST["birthdate"] ?? ""));
+$contactNumber = trim((string)($_POST["contact_number"] ?? ""));
+$diagnosis = trim((string)($_POST["diagnosis"] ?? ""));
+$hospital = trim((string)($_POST["hospital"] ?? ""));
+$contactPerson = trim((string)($_POST["contact_person"] ?? ""));
 $csrfToken = $_POST["csrf_token"] ?? "";
 $returnTo = normalize_return_to((string)($_POST["return_to"] ?? ""), is_super_admin());
 $scopedBarangay = current_scoped_barangay();
@@ -90,12 +97,8 @@ if (!verify_csrf_token($csrfToken)) {
   redirect_edit($recordId, "error", "Invalid request token. Please refresh and try again.", $returnTo);
 }
 
-if ($name === "" || $type === "" || $barangay === "" || $amountRaw === "" || !is_numeric($amountRaw)) {
+if ($name === "" || $barangay === "" || $amountRaw === "" || !is_numeric($amountRaw)) {
   redirect_edit($recordId, "error", "Please fill out all required fields correctly.", $returnTo);
-}
-
-if ($type === "Other" && $typeSpecify === "") {
-  redirect_edit($recordId, "error", "Please specify the Type of Assistance when you choose Other.", $returnTo);
 }
 
 $amount = (float)$amountRaw;
@@ -144,7 +147,63 @@ if ($existingOfficeScope === "") {
   $existingOfficeScope = "municipality";
 }
 $officeScopeToSave = $isOfficeScoped ? $scopedOffice : $existingOfficeScope;
+$isMaifRecord = is_maif_office_scope($officeScopeToSave);
 
+if ($isMaifRecord) {
+  $type = "Medical";
+  $typeSpecify = "";
+  $municipality = normalize_maif_municipality($postedMunicipality);
+  if ($municipality === "") {
+    redirect_edit($recordId, "error", "Please select a municipality for the MAIF entry.", $returnTo);
+  }
+} else {
+  $municipality = "Daet";
+}
+
+if ($type === "") {
+  redirect_edit($recordId, "error", "Please fill out all required fields correctly.", $returnTo);
+}
+if (!$isMaifRecord && $type === "Other" && $typeSpecify === "") {
+  redirect_edit($recordId, "error", "Please specify the Type of Assistance when you choose Other.", $returnTo);
+}
+if ($type !== "Other") {
+  $typeSpecify = "";
+}
+
+$age = null;
+if ($ageRaw !== "") {
+  if (!preg_match('/^\d{1,3}$/', $ageRaw)) {
+    redirect_edit($recordId, "error", "Age must be a whole number.", $returnTo);
+  }
+  $age = (int)$ageRaw;
+  if ($age < 0 || $age > 150) {
+    redirect_edit($recordId, "error", "Age must be between 0 and 150.", $returnTo);
+  }
+}
+
+if (!$isMaifRecord) {
+  $age = null;
+  $birthdate = "";
+  $contactNumber = "";
+  $diagnosis = "";
+  $hospital = "";
+  $contactPerson = "";
+}
+
+if ($birthdate !== "") {
+  $birthTs = strtotime($birthdate);
+  if ($birthTs === false) {
+    redirect_edit($recordId, "error", "Invalid birthdate.", $returnTo);
+  }
+  if ($birthTs > strtotime(date("Y-m-d"))) {
+    redirect_edit($recordId, "error", "Birthdate cannot be in the future.", $returnTo);
+  }
+  if ($age === null) {
+    $birthDateObj = new DateTimeImmutable(date("Y-m-d", $birthTs));
+    $todayObj = new DateTimeImmutable(date("Y-m-d"));
+    $age = $birthDateObj->diff($todayObj)->y;
+  }
+}
 $hasTypeSpecify = has_column($conn, "records", "type_specify");
 if (!$hasTypeSpecify) {
   if ($type === "Other" && $typeSpecify !== "") {
@@ -157,7 +216,7 @@ if (!$hasTypeSpecify) {
 
 if ($hasTypeSpecify) {
   $updateSql = "UPDATE records
-     SET name = ?, type = ?, type_specify = ?, barangay = ?, office_scope = ?, municipality = ?, province = ?, amount = ?, record_date = ?, month_year = ?, notes = ?
+     SET name = ?, type = ?, type_specify = ?, barangay = ?, office_scope = ?, municipality = ?, province = ?, amount = ?, record_date = ?, month_year = ?, notes = ?, age = ?, birthdate = ?, contact_number = ?, diagnosis = ?, hospital = ?, contact_person = ?
      WHERE record_id = ?";
   if ($isOfficeScoped) {
     $updateSql .= " AND office_scope = ?";
@@ -175,7 +234,7 @@ if ($hasTypeSpecify) {
 
   if ($isOfficeScoped && $scopedBarangay !== "") {
     $stmt->bind_param(
-      "sssssssdsssiss",
+      "sssssssdsssssssssiss",
       $name,
       $type,
       $typeSpecify,
@@ -187,13 +246,19 @@ if ($hasTypeSpecify) {
       $recordDate,
       $monthYear,
       $notes,
+      $age,
+      $birthdate,
+      $contactNumber,
+      $diagnosis,
+      $hospital,
+      $contactPerson,
       $recordId,
       $scopedOffice,
       $scopedBarangay
     );
   } elseif ($isOfficeScoped) {
     $stmt->bind_param(
-      "sssssssdsssis",
+      "sssssssdssssssssis",
       $name,
       $type,
       $typeSpecify,
@@ -205,12 +270,18 @@ if ($hasTypeSpecify) {
       $recordDate,
       $monthYear,
       $notes,
+      $age,
+      $birthdate,
+      $contactNumber,
+      $diagnosis,
+      $hospital,
+      $contactPerson,
       $recordId,
       $scopedOffice
     );
   } elseif ($scopedBarangay !== "") {
     $stmt->bind_param(
-      "sssssssdsssis",
+      "sssssssdssssssssis",
       $name,
       $type,
       $typeSpecify,
@@ -222,12 +293,18 @@ if ($hasTypeSpecify) {
       $recordDate,
       $monthYear,
       $notes,
+      $age,
+      $birthdate,
+      $contactNumber,
+      $diagnosis,
+      $hospital,
+      $contactPerson,
       $recordId,
       $scopedBarangay
     );
   } else {
     $stmt->bind_param(
-      "sssssssdsssi",
+      "sssssssdssssssssi",
       $name,
       $type,
       $typeSpecify,
@@ -239,12 +316,18 @@ if ($hasTypeSpecify) {
       $recordDate,
       $monthYear,
       $notes,
+      $age,
+      $birthdate,
+      $contactNumber,
+      $diagnosis,
+      $hospital,
+      $contactPerson,
       $recordId
     );
   }
 } else {
   $updateSql = "UPDATE records
-     SET name = ?, type = ?, barangay = ?, office_scope = ?, municipality = ?, province = ?, amount = ?, record_date = ?, month_year = ?, notes = ?
+     SET name = ?, type = ?, barangay = ?, office_scope = ?, municipality = ?, province = ?, amount = ?, record_date = ?, month_year = ?, notes = ?, age = ?, birthdate = ?, contact_number = ?, diagnosis = ?, hospital = ?, contact_person = ?
      WHERE record_id = ?";
   if ($isOfficeScoped) {
     $updateSql .= " AND office_scope = ?";
@@ -262,7 +345,7 @@ if ($hasTypeSpecify) {
 
   if ($isOfficeScoped && $scopedBarangay !== "") {
     $stmt->bind_param(
-      "ssssssdsssiss",
+      "ssssssdsssssssssiss",
       $name,
       $type,
       $barangay,
@@ -273,13 +356,19 @@ if ($hasTypeSpecify) {
       $recordDate,
       $monthYear,
       $notes,
+      $age,
+      $birthdate,
+      $contactNumber,
+      $diagnosis,
+      $hospital,
+      $contactPerson,
       $recordId,
       $scopedOffice,
       $scopedBarangay
     );
   } elseif ($isOfficeScoped) {
     $stmt->bind_param(
-      "ssssssdsssis",
+      "ssssssdssssssssis",
       $name,
       $type,
       $barangay,
@@ -290,12 +379,18 @@ if ($hasTypeSpecify) {
       $recordDate,
       $monthYear,
       $notes,
+      $age,
+      $birthdate,
+      $contactNumber,
+      $diagnosis,
+      $hospital,
+      $contactPerson,
       $recordId,
       $scopedOffice
     );
   } elseif ($scopedBarangay !== "") {
     $stmt->bind_param(
-      "ssssssdsssis",
+      "ssssssdssssssssis",
       $name,
       $type,
       $barangay,
@@ -306,12 +401,18 @@ if ($hasTypeSpecify) {
       $recordDate,
       $monthYear,
       $notes,
+      $age,
+      $birthdate,
+      $contactNumber,
+      $diagnosis,
+      $hospital,
+      $contactPerson,
       $recordId,
       $scopedBarangay
     );
   } else {
     $stmt->bind_param(
-      "ssssssdsssi",
+      "ssssssdssssssssi",
       $name,
       $type,
       $barangay,
@@ -322,6 +423,12 @@ if ($hasTypeSpecify) {
       $recordDate,
       $monthYear,
       $notes,
+      $age,
+      $birthdate,
+      $contactNumber,
+      $diagnosis,
+      $hospital,
+      $contactPerson,
       $recordId
     );
   }

@@ -205,6 +205,20 @@ function ensure_records_office_scope_column(): void {
     @$conn->query("ALTER TABLE records ADD COLUMN office_scope VARCHAR(32) NOT NULL DEFAULT 'municipality'");
   }
 
+  $extraColumns = [
+    'age' => "ALTER TABLE records ADD COLUMN age INT NULL DEFAULT NULL",
+    'birthdate' => "ALTER TABLE records ADD COLUMN birthdate DATE NULL DEFAULT NULL",
+    'contact_number' => "ALTER TABLE records ADD COLUMN contact_number VARCHAR(64) NULL DEFAULT NULL",
+    'diagnosis' => "ALTER TABLE records ADD COLUMN diagnosis TEXT NULL",
+    'hospital' => "ALTER TABLE records ADD COLUMN hospital VARCHAR(191) NULL DEFAULT NULL",
+    'contact_person' => "ALTER TABLE records ADD COLUMN contact_person VARCHAR(191) NULL DEFAULT NULL",
+  ];
+  foreach ($extraColumns as $column => $sql) {
+    if (!table_has_column('records', $column)) {
+      @$conn->query($sql);
+    }
+  }
+
   @$conn->query("UPDATE records SET office_scope = 'municipality' WHERE office_scope IS NULL OR TRIM(office_scope) = ''");
 }
 
@@ -464,10 +478,372 @@ function normalize_office_scope_name(string $office): string {
   if ($officeKey === 'borabod') {
     return 'borabod';
   }
+  if ($officeKey === 'maif') {
+    return 'maif';
+  }
   if ($officeKey === 'municipality') {
     return 'municipality';
   }
   return '';
+}
+
+function is_maif_office_scope(?string $office = null): bool {
+  $scope = $office;
+  if ($scope === null) {
+    $scope = current_scoped_office();
+  }
+  return normalize_office_scope_name((string)$scope) === 'maif';
+}
+
+function maif_municipality_choices(): array {
+  return [
+    'Daet',
+    'Basud',
+    'Capalonga',
+    'Jose Panganiban',
+    'Labo',
+    'Mercedes',
+    'Paracale',
+    'San Lorenzo Ruiz',
+    'San Vicente',
+    'Santa Elena',
+    'Talisay',
+    'Vinzons',
+  ];
+}
+
+function normalize_maif_municipality(string $raw): string {
+  $value = trim($raw);
+  if ($value === '') {
+    return '';
+  }
+  foreach (maif_municipality_choices() as $choice) {
+    if (strcasecmp($value, $choice) === 0) {
+      return $choice;
+    }
+  }
+  return '';
+}
+
+function maif_barangay_options_by_municipality(): array {
+  return [
+    'Daet' => [
+      'Alawihao',
+      'Awitan',
+      'Bagasbas',
+      'Barangay 1',
+      'Barangay 2 (Pasig)',
+      'Barangay 3 (Bagumbayan)',
+      'Barangay 4 (Mantagbac)',
+      'Barangay 5 (Pandan)',
+      'Barangay 6 (Centro)',
+      'Barangay 7 (Centro Oriental)',
+      'Barangay 8 (Salcedo)',
+      'Bibirao',
+      'Borabod',
+      'Calasgasan',
+      'Camambugan',
+      'Cobangbang',
+      'Dogongan',
+      'Gahonon',
+      'Gubat',
+      'Lag-on',
+      'Magang',
+      'Mambalite',
+      'Mancruz',
+      'Pamorangon',
+      'San Isidro',
+    ],
+    'Basud' => [
+      'Angas',
+      'Bactas',
+      'Binatagan',
+      'Caayunan',
+      'Guinatungan',
+      'Hinampacan',
+      'Langa',
+      'Laniton',
+      'Lidong',
+      'Mampili',
+      'Mandazo',
+      'Mangcamagong',
+      'Manmuntay',
+      'Mantugawe',
+      'Matnog',
+      'Mocong',
+      'Oliva',
+      'Pagsangahan',
+      'Pinagwarasan',
+      'Plaridel',
+      'Poblacion 1',
+      'Poblacion 2',
+      'San Felipe',
+      'San Jose',
+      'San Pascual',
+      'Taba-taba',
+      'Tacad',
+      'Taisan',
+      'Tuaca',
+    ],
+    'Capalonga' => [
+      'Alayao',
+      'Binawangan',
+      'Calabaca',
+      'Camagsaan',
+      'Catabaguangan',
+      'Catioan',
+      'Del Pilar',
+      'Itok',
+      'Lucbanan',
+      'Mabini',
+      'Mactang',
+      'Magsaysay',
+      'Mataque',
+      'Old Camp',
+      'Poblacion',
+      'San Antonio',
+      'San Isidro',
+      'San Roque',
+      'Tanawan',
+      'Ubang',
+      'Villa Aurora',
+      'Villa Belen',
+    ],
+    'Jose Panganiban' => [
+      'Bagong Bayan',
+      'Calero',
+      'Dahican',
+      'Dayhagan',
+      'Larap',
+      'Luklukan Norte',
+      'Luklukan Sur',
+      'Motherlode',
+      'Nakalaya',
+      'North Poblacion',
+      'Osmena',
+      'Pag-Asa',
+      'Parang',
+      'Plaridel',
+      'Salvacion',
+      'San Isidro',
+      'San Jose',
+      'San Martin',
+      'San Pedro',
+      'San Rafael',
+      'Santa Cruz',
+      'Santa Elena',
+      'Santa Milagrosa',
+      'Santa Rosa Norte',
+      'Santa Rosa Sur',
+      'South Poblacion',
+      'Tamisan',
+    ],
+    'Labo' => [
+      'Anahaw',
+      'Anameam',
+      'Awitan',
+      'Baay',
+      'Bagacay',
+      'Bagong Silang I',
+      'Bagong Silang II',
+      'Bagong Silang III',
+      'Bakiad',
+      'Bautista',
+      'Bayabas',
+      'Bayan-bayan',
+      'Benit',
+      'Bulhao',
+      'Cabatuhan',
+      'Cabusay',
+      'Calabasa',
+      'Canapawan',
+      'Daguit',
+      'Dalas',
+      'Dumagmang',
+      'Exciban',
+      'Fundado',
+      'Guinacutan',
+      'Guisican',
+      'Gumamela',
+      'Iberica',
+      'Kalamunding',
+      'Lugui',
+      'Mabilo I',
+      'Mabilo II',
+      'Macogon',
+      'Mahawan-hawan',
+      'Malangcao-Basud',
+      'Malasugui',
+      'Malatap',
+      'Malaya',
+      'Malibago',
+      'Maot',
+      'Masalong',
+      'Matanlang',
+      'Napaod',
+      'Pag-Asa',
+      'Pangpang',
+      'Pinya',
+      'San Antonio',
+      'San Francisco',
+      'Santa Cruz',
+      'Submakin',
+      'Talobatib',
+      'Tigbinan',
+      'Tulay Na Lupa',
+    ],
+    'Mercedes' => [
+      'Apuao',
+      'Barangay I',
+      'Barangay II',
+      'Barangay III',
+      'Barangay IV',
+      'Barangay V',
+      'Barangay VI',
+      'Barangay VII',
+      'Caringo',
+      'Catandunganon',
+      'Cayucyucan',
+      'Colasi',
+      'Del Rosario',
+      'Gaboc',
+      'Hamoraon',
+      'Hinipaan',
+      'Lalawigan',
+      'Lanot',
+      'Mambungalon',
+      'Manguisoc',
+      'Masalongsalong',
+      'Matoogtoog',
+      'Pambuhan',
+      'Quinapaguian',
+      'San Roque',
+      'Tarum',
+    ],
+    'Paracale' => [
+      'Awitan',
+      'Bagumbayan',
+      'Bakal',
+      'Batobalani',
+      'Calaburnay',
+      'Capacuan',
+      'Casalugan',
+      'Dagang',
+      'Dalnac',
+      'Dancalan',
+      'Gumaus',
+      'Labnig',
+      'Macolabo Island',
+      'Malacbang',
+      'Malaguit',
+      'Mampungo',
+      'Mangkasay',
+      'Maybato',
+      'Palanas',
+      'Pinagbirayan Malaki',
+      'Pinagbirayan Munti',
+      'Poblacion Norte',
+      'Poblacion Sur',
+      'Tabas',
+      'Talusan',
+      'Tawig',
+      'Tugos',
+    ],
+    'San Lorenzo Ruiz' => [
+      'Daculang Bolo',
+      'Dagotdotan',
+      'Langga',
+      'Laniton',
+      'Maisog',
+      'Mampurog',
+      'Manlimonsito',
+      'Matacong',
+      'Salvacion',
+      'San Antonio',
+      'San Isidro',
+      'San Ramon',
+    ],
+    'San Vicente' => [
+      'Asdum',
+      'Cabanbanan',
+      'Calabagas',
+      'Fabrica',
+      'Iraya Sur',
+      'Man-ogob',
+      'Poblacion District I',
+      'Poblacion District II',
+      'San Jose',
+    ],
+    'Santa Elena' => [
+      'Basiad',
+      'Bulala',
+      'Don Tomas',
+      'Guitol',
+      'Kabuluan',
+      'Kagtalaba',
+      'Maulawin',
+      'Patag Ibaba',
+      'Patag Iraya',
+      'Plaridel',
+      'Polungguitguit',
+      'Rizal',
+      'Salvacion',
+      'San Lorenzo',
+      'San Pedro',
+      'San Vicente',
+      'Santa Elena',
+      'Tabugon',
+      'Villa San Isidro',
+    ],
+    'Talisay' => [
+      'Binanuaan',
+      'Caawigan',
+      'Cahabaan',
+      'Calintaan',
+      'Del Carmen',
+      'Gabon',
+      'Itomang',
+      'Poblacion',
+      'San Francisco',
+      'San Isidro',
+      'San Jose',
+      'San Nicolas',
+      'Santa Cruz',
+      'Santa Elena',
+      'Santo Nino',
+    ],
+    'Vinzons' => [
+      'Aguit-It',
+      'Banocboc',
+      'Barangay I',
+      'Barangay II',
+      'Barangay III',
+      'Cagbalogo',
+      'Calangcawan Norte',
+      'Calangcawan Sur',
+      'Guinacutan',
+      'Mangcawayan',
+      'Mangcayo',
+      'Manlucugan',
+      'Matango',
+      'Napilihan',
+      'Pinagtigasan',
+      'Sabang',
+      'Santo Domingo',
+      'Singi',
+      'Sula',
+    ],
+  ];
+}
+
+function maif_designated_barangay_suggestions(string $municipality): array {
+  $resolvedMunicipality = normalize_maif_municipality($municipality);
+  if ($resolvedMunicipality === '') {
+    return [];
+  }
+
+  $map = maif_barangay_options_by_municipality();
+  return $map[$resolvedMunicipality] ?? [];
 }
 
 function fetch_user_office_scope(string $username): string {
@@ -504,6 +880,9 @@ function fetch_user_office_scope(string $username): string {
 
   if ($roleRaw === 'borabod') {
     return 'borabod';
+  }
+  if ($roleRaw === 'maif') {
+    return 'maif';
   }
   return 'municipality';
 }
