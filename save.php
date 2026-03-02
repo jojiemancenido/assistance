@@ -31,9 +31,18 @@ function has_column(mysqli $conn, string $table, string $column): bool {
   $rs = $st->get_result();
   return ($rs && $rs->num_rows > 0);
 }
-function redirect_with_msg(string $status, string $msg): void {
-  $url = "index.php?status=" . urlencode($status) . "&msg=" . urlencode($msg) . "#entry-section";
+function redirect_with_msg(string $status, string $msg, array $extra = []): void {
+  $url = "index.php?status=" . urlencode($status) . "&msg=" . urlencode($msg);
+  if (!empty($extra)) {
+    $url .= "&" . http_build_query($extra);
+  }
+  $url .= "#entry-section";
   header("Location: " . $url);
+  exit;
+}
+
+function redirect_to_entry(): void {
+  header("Location: index.php#entry-section");
   exit;
 }
 
@@ -66,8 +75,64 @@ if ($ts === false) {
 }
 
 $month_year = date("Y-m", $ts);
-
+$yearKey = (int)date("Y", $ts);
+$confirmDuplicate = trim((string)($_POST["confirm_duplicate"] ?? "")) === "1";
 $hasTypeSpecify = has_column($conn, "records", "type_specify");
+$normalizedName = strtolower(trim($name));
+$normalizedBarangay = strtolower(trim($barangay));
+$normalizedTypeSpecify = strtolower(trim($type_specify));
+$duplicateCount = 0;
+$duplicateSql = (
+  "SELECT COUNT(*) AS total_duplicates
+   FROM records
+   WHERE LOWER(TRIM(name)) = ?
+     AND LOWER(TRIM(barangay)) = ?
+     AND type = ?
+     AND YEAR(record_date) = ?
+     AND office_scope = ?"
+);
+if ($hasTypeSpecify) {
+  $duplicateSql .= " AND LOWER(TRIM(COALESCE(type_specify, ''))) = ?";
+}
+$dupStmt = $conn->prepare($duplicateSql);
+$typeLabel = $type;
+if ($type === "Other" && $type_specify !== "") {
+  $typeLabel = "Other: " . $type_specify;
+}
+if ($dupStmt) {
+  if ($hasTypeSpecify) {
+    $dupStmt->bind_param("sssiss", $normalizedName, $normalizedBarangay, $type, $yearKey, $officeScope, $normalizedTypeSpecify);
+  } else {
+    $dupStmt->bind_param("sssis", $normalizedName, $normalizedBarangay, $type, $yearKey, $officeScope);
+  }
+  if ($dupStmt->execute()) {
+    $dupRes = $dupStmt->get_result();
+    if ($dupRes && $dupRow = $dupRes->fetch_assoc()) {
+      $duplicateCount = (int)($dupRow["total_duplicates"] ?? 0);
+    }
+  }
+  $dupStmt->close();
+}
+
+if (!$confirmDuplicate && $duplicateCount > 0) {
+  $_SESSION["duplicate_warning"] = [
+    "count" => $duplicateCount,
+    "name" => $name,
+    "barangay" => $barangay,
+    "type" => $typeLabel,
+    "year" => (string)$yearKey,
+  ];
+  $_SESSION["duplicate_form_draft"] = [
+    "name" => $name,
+    "type" => $type,
+    "type_specify" => $type_specify,
+    "barangay" => $barangay,
+    "amount" => $amountRaw,
+    "record_date" => $record_date,
+    "notes" => $notes,
+  ];
+  redirect_to_entry();
+}
 
 // If the column doesn't exist yet, store the specify value inside notes (hidden tag)
 if (!$hasTypeSpecify) {

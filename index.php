@@ -87,6 +87,30 @@ $isBarangayScoped = ($scopedBarangay !== "");
 $scopedOffice = current_scoped_office();
 $isOfficeScoped = ($scopedOffice !== "");
 $visibleBarangays = $isBarangayScoped ? [$scopedBarangay] : $barangays;
+$duplicateWarning = (isset($_GET["duplicate_warning"]) && $_GET["duplicate_warning"] === "1");
+$duplicateCount = max(0, (int)($_GET["duplicate_count"] ?? 0));
+$duplicateName = trim((string)($_GET["duplicate_name"] ?? ""));
+$duplicateBarangay = trim((string)($_GET["duplicate_barangay"] ?? ""));
+$duplicateType = trim((string)($_GET["duplicate_type"] ?? ""));
+$duplicateYear = trim((string)($_GET["duplicate_year"] ?? ""));
+$duplicateSession = is_array($_SESSION["duplicate_warning"] ?? null) ? $_SESSION["duplicate_warning"] : null;
+$draftSession = is_array($_SESSION["duplicate_form_draft"] ?? null) ? $_SESSION["duplicate_form_draft"] : [];
+unset($_SESSION["duplicate_warning"], $_SESSION["duplicate_form_draft"]);
+if (is_array($duplicateSession)) {
+  $duplicateWarning = true;
+  $duplicateCount = max(0, (int)($duplicateSession["count"] ?? 0));
+  $duplicateName = trim((string)($duplicateSession["name"] ?? ""));
+  $duplicateBarangay = trim((string)($duplicateSession["barangay"] ?? ""));
+  $duplicateType = trim((string)($duplicateSession["type"] ?? ""));
+  $duplicateYear = trim((string)($duplicateSession["year"] ?? ""));
+}
+$formName = trim((string)($draftSession["name"] ?? ""));
+$formType = trim((string)($draftSession["type"] ?? ""));
+$formTypeSpecify = trim((string)($draftSession["type_specify"] ?? ""));
+$formAmount = trim((string)($draftSession["amount"] ?? ""));
+$formRecordDate = trim((string)($draftSession["record_date"] ?? $today));
+$formBarangay = trim((string)($draftSession["barangay"] ?? ($isBarangayScoped ? $scopedBarangay : "")));
+$formNotes = trim((string)($draftSession["notes"] ?? ""));
 
 cleanup_expired_active_sessions();
 $isCurrentSessionActive = ($authUser !== "" && $authToken !== "" && has_active_session_slot($authUser, $authToken));
@@ -539,45 +563,46 @@ $baseQuery = [
         <div class="card__body">
 
           <?php if ($msg !== ""): ?>
-            <div class="alert <?php echo ($status === "error") ? "alert--error" : "alert--success"; ?>">
+            <div class="alert <?php echo ($status === "error") ? "alert--error" : (($status === "warning") ? "alert--warning" : "alert--success"); ?>">
               <?php echo htmlspecialchars($msg); ?>
             </div>
           <?php endif; ?>
 
-          <form method="POST" action="save.php" autocomplete="off">
+          <form method="POST" action="save.php" autocomplete="off" id="entry-form">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+            <input type="hidden" name="confirm_duplicate" value="0" id="confirm-duplicate-flag" />
             <div class="form-grid">
 
               <div class="field">
                 <label for="name">Name</label>
-                <input id="name" type="text" name="name" required placeholder="e.g., Juan Dela Cruz" />
+                <input id="name" type="text" name="name" required placeholder="e.g., Juan Dela Cruz" value="<?php echo htmlspecialchars($formName); ?>" />
               </div>
 
               <div class="field">
                 <label for="type">Type of Assistance</label>
                 <select id="type" name="type" required>
-                  <option value="" disabled selected>Select type</option>
+                  <option value="" disabled <?php echo ($formType === "") ? "selected" : ""; ?>>Select type</option>
                   <?php foreach ($types as $t): ?>
-                    <option value="<?php echo htmlspecialchars($t); ?>"><?php echo htmlspecialchars($t); ?></option>
+                    <option value="<?php echo htmlspecialchars($t); ?>" <?php echo ($formType === $t) ? "selected" : ""; ?>><?php echo htmlspecialchars($t); ?></option>
                   <?php endforeach; ?>
                 </select>
               </div>
 
               <!-- Only shows when type = Other -->
-              <div class="field field--full hidden" id="typeSpecifyWrap">
+              <div class="field field--full <?php echo ($formType === "Other") ? "" : "hidden"; ?>" id="typeSpecifyWrap">
                 <label for="type_specify">Specify Type (if Other)</label>
-                <input id="type_specify" type="text" name="type_specify" placeholder="e.g., Educational, Food, Transportation..." />
+                <input id="type_specify" type="text" name="type_specify" placeholder="e.g., Educational, Food, Transportation..." value="<?php echo htmlspecialchars($formTypeSpecify); ?>" />
                 <div class="help">Required only when you choose <b>Other</b>.</div>
               </div>
 
               <div class="field">
                 <label for="amount">Amount (PHP)</label>
-                <input id="amount" type="number" step="0.01" min="0" name="amount" required placeholder="0.00" />
+                <input id="amount" type="number" step="0.01" min="0" name="amount" required placeholder="0.00" value="<?php echo htmlspecialchars($formAmount); ?>" />
               </div>
 
               <div class="field">
                 <label for="record_date">Date</label>
-                <input id="record_date" type="date" name="record_date" value="<?php echo htmlspecialchars($today); ?>" required />
+                <input id="record_date" type="date" name="record_date" value="<?php echo htmlspecialchars($formRecordDate); ?>" required />
               </div>
 
               <div class="field field--full">
@@ -587,9 +612,9 @@ $baseQuery = [
                   <input type="hidden" name="barangay" value="<?php echo htmlspecialchars($scopedBarangay); ?>" />
                 <?php else: ?>
                   <select id="barangay" name="barangay" required>
-                    <option value="" disabled selected>Select barangay</option>
+                    <option value="" disabled <?php echo ($formBarangay === "") ? "selected" : ""; ?>>Select barangay</option>
                     <?php foreach ($visibleBarangays as $b): ?>
-                      <option value="<?php echo htmlspecialchars($b); ?>"><?php echo htmlspecialchars($b); ?></option>
+                      <option value="<?php echo htmlspecialchars($b); ?>" <?php echo ($formBarangay === $b) ? "selected" : ""; ?>><?php echo htmlspecialchars($b); ?></option>
                     <?php endforeach; ?>
                   </select>
                 <?php endif; ?>
@@ -607,7 +632,7 @@ $baseQuery = [
 
               <div class="field field--full">
                 <label for="notes">Notes (optional)</label>
-                <textarea id="notes" name="notes" placeholder="Any notes about this assistance/record..."></textarea>
+                <textarea id="notes" name="notes" placeholder="Any notes about this assistance/record..."><?php echo htmlspecialchars($formNotes); ?></textarea>
               </div>
 
             </div>
@@ -616,6 +641,64 @@ $baseQuery = [
               <button class="btn" type="submit">Save Record</button>
             </div>
           </form>
+
+          <div id="save-progress-overlay" class="save-progress-overlay hidden" aria-hidden="true">
+            <div class="save-progress-panel" role="status" aria-live="polite">
+              <div class="save-progress-spinner" aria-hidden="true"></div>
+              <p class="save-progress-eyebrow">Saving Record</p>
+              <h3>Please wait while your data is being saved</h3>
+              <p class="save-progress-copy">The system is validating the entry and writing it to your current office records.</p>
+            </div>
+          </div>
+
+          <?php if ($duplicateWarning && $duplicateCount > 0): ?>
+            <div id="duplicate-warning-overlay" class="duplicate-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="duplicate-warning-title" aria-hidden="false">
+              <div class="duplicate-modal-panel">
+                <button type="button" class="duplicate-modal-close" id="close-duplicate-btn" aria-label="Close duplicate warning">&times;</button>
+                <div class="duplicate-modal-badge-wrap">
+                  <div class="duplicate-modal-icon" aria-hidden="true">!</div>
+                  <div class="duplicate-modal-flag">Duplicate Notice</div>
+                </div>
+                <div class="duplicate-modal-head">
+                  <p class="duplicate-modal-eyebrow">Review before saving</p>
+                  <h3 id="duplicate-warning-title">Possible duplicate record detected</h3>
+                  <?php if ($duplicateCount === 1): ?>
+                    <p>1 existing record already matches this entry in your current office.</p>
+                  <?php else: ?>
+                    <p><?php echo htmlspecialchars((string)$duplicateCount); ?> existing records already match this entry in your current office.</p>
+                  <?php endif; ?>
+                </div>
+                <div class="duplicate-modal-banner">
+                  The system found the same name, barangay, assistance type, and year.
+                </div>
+                <div class="duplicate-modal-grid">
+                  <div class="duplicate-modal-item">
+                    <span>Name</span>
+                    <strong><?php echo htmlspecialchars($duplicateName); ?></strong>
+                  </div>
+                  <div class="duplicate-modal-item">
+                    <span>Barangay</span>
+                    <strong><?php echo htmlspecialchars($duplicateBarangay); ?></strong>
+                  </div>
+                  <div class="duplicate-modal-item">
+                    <span>Assistance</span>
+                    <strong><?php echo htmlspecialchars($duplicateType); ?></strong>
+                  </div>
+                  <div class="duplicate-modal-item">
+                    <span>Year</span>
+                    <strong><?php echo htmlspecialchars($duplicateYear); ?></strong>
+                  </div>
+                </div>
+                <div class="duplicate-modal-note">
+                  Choose <b>Save Anyway</b> if this is intentional, or <b>Cancel</b> to review the form first.
+                </div>
+                <div class="duplicate-modal-actions">
+                  <button type="button" class="btn btn--secondary btn--sm" id="cancel-duplicate-btn">Cancel</button>
+                  <button type="button" class="btn btn--sm" id="confirm-duplicate-btn">Save Anyway</button>
+                </div>
+              </div>
+            </div>
+          <?php endif; ?>
 
           <div class="import-block">
             <h3 class="card__title">Import from Excel/CSV</h3>
@@ -1134,8 +1217,86 @@ $baseQuery = [
       document.addEventListener('keydown', function(e){
         if (e.key === 'Escape' && !overlay.classList.contains('hidden')) {
           closeView();
+          }
+        });
+      })();
+    </script>
+  <script>
+    (function(){
+      const overlay = document.getElementById('duplicate-warning-overlay');
+      const progressOverlay = document.getElementById('save-progress-overlay');
+      const confirmBtn = document.getElementById('confirm-duplicate-btn');
+      const cancelBtn = document.getElementById('cancel-duplicate-btn');
+      const closeBtn = document.getElementById('close-duplicate-btn');
+      const form = document.getElementById('entry-form');
+      const flag = document.getElementById('confirm-duplicate-flag');
+
+      function showSaveProgress(){
+        if (!progressOverlay) return;
+        progressOverlay.classList.remove('hidden');
+        progressOverlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+      }
+
+      function closeDuplicateWarning(){
+        if (!overlay) return;
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        if (flag) {
+          flag.value = '0';
         }
-      });
+        if (!progressOverlay || progressOverlay.classList.contains('hidden')) {
+          document.body.classList.remove('modal-open');
+        }
+      }
+
+      function overlayIsOpen(){
+        return overlay && !overlay.classList.contains('hidden');
+      }
+
+      if (overlayIsOpen()) {
+        document.body.classList.add('modal-open');
+      }
+
+      if (confirmBtn && form && flag) {
+        confirmBtn.addEventListener('click', function(){
+          flag.value = '1';
+          showSaveProgress();
+          form.submit();
+        });
+      }
+
+      if (form) {
+        form.addEventListener('submit', function(e){
+          if (overlayIsOpen() && flag && flag.value !== '1') {
+            e.preventDefault();
+            return;
+          }
+          showSaveProgress();
+        });
+      }
+
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', closeDuplicateWarning);
+      }
+
+      if (closeBtn) {
+        closeBtn.addEventListener('click', closeDuplicateWarning);
+      }
+
+      if (overlay) {
+        overlay.addEventListener('click', function(e){
+          if (e.target === overlay) {
+            closeDuplicateWarning();
+          }
+        });
+
+        document.addEventListener('keydown', function(e){
+          if (e.key === 'Escape') {
+            closeDuplicateWarning();
+          }
+        });
+      }
     })();
   </script>
   <script>
