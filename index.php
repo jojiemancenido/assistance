@@ -1150,32 +1150,124 @@ $baseQuery = [
 
     <div id="record-view-overlay" class="record-view-overlay hidden" aria-hidden="true">
       <div class="record-view-panel" role="dialog" aria-modal="true" aria-labelledby="record-view-title">
+        <div class="record-view-panel__glow" aria-hidden="true"></div>
         <div class="record-view-panel__head">
           <div>
+            <p class="record-view-panel__eyebrow">Record Snapshot</p>
             <h3 id="record-view-title">Record Details</h3>
-            <p>Viewing full details for selected record.</p>
+            <p class="record-view-panel__sub">Review the saved entry before printing or closing.</p>
           </div>
           <button type="button" class="record-view-close" id="record-view-close" aria-label="Close record details">&times;</button>
         </div>
-        <div class="record-view-grid">
-          <div class="record-view-item"><span>ID</span><strong id="view-record-id">-</strong></div>
-          <div class="record-view-item"><span>Name</span><strong id="view-record-name">-</strong></div>
-          <div class="record-view-item"><span>Type</span><strong id="view-record-type">-</strong></div>
-          <div class="record-view-item"><span>Barangay</span><strong id="view-record-barangay">-</strong></div>
-          <div class="record-view-item"><span>Office</span><strong id="view-record-office">-</strong></div>
-          <?php if ($isMaifDashboard): ?>
-            <div class="record-view-item"><span>Municipality</span><strong id="view-record-municipality">-</strong></div>
-            <div class="record-view-item"><span>Age</span><strong id="view-record-age">-</strong></div>
-            <div class="record-view-item"><span>Birthdate</span><strong id="view-record-birthdate">-</strong></div>
-            <div class="record-view-item"><span>Contact Number</span><strong id="view-record-contact-number">-</strong></div>
-            <div class="record-view-item record-view-item--full"><span>Diagnosis</span><strong id="view-record-diagnosis">-</strong></div>
-            <div class="record-view-item"><span>Hospital</span><strong id="view-record-hospital">-</strong></div>
-            <div class="record-view-item"><span>Contact Person</span><strong id="view-record-contact-person">-</strong></div>
-          <?php endif; ?>
-          <div class="record-view-item"><span>Amount</span><strong id="view-record-amount">-</strong></div>
-          <div class="record-view-item"><span>Date</span><strong id="view-record-date">-</strong></div>
-          <div class="record-view-item"><span>Year-Month</span><strong id="view-record-month-year">-</strong></div>
-          <div class="record-view-item record-view-item--full"><span>Notes</span><strong id="view-record-notes">-</strong></div>
+        <div class="record-view-panel__badge-row">
+          <span class="record-view-panel__badge">Saved Entry</span>
+          <span class="record-view-panel__caption">Live dashboard preview</span>
+        </div>
+        <div class="record-view-layout">
+          <div class="record-view-main">
+            <div class="record-view-hero">
+              <div class="record-view-hero__identity">
+                <span class="record-view-hero__label">Beneficiary</span>
+                <strong id="view-record-name">-</strong>
+                <div class="record-view-hero__meta">
+                  <span>Record ID <b id="view-record-id">-</b></span>
+                  <span>Office <b id="view-record-office">-</b></span>
+                </div>
+              </div>
+              <div class="record-view-hero__amount">
+                <span class="record-view-hero__label">Amount</span>
+                <strong id="view-record-amount">-</strong>
+              </div>
+            </div>
+            <div class="record-view-section">
+              <p class="record-view-section__title">Core Details</p>
+              <div class="record-view-grid">
+                <div class="record-view-item">
+                  <span>Type</span>
+                  <strong id="view-record-type">-</strong>
+                </div>
+                <div class="record-view-item">
+                  <span>Barangay</span>
+                  <strong id="view-record-barangay">-</strong>
+                </div>
+                <div class="record-view-item">
+                  <span>Date</span>
+                  <strong id="view-record-date">-</strong>
+                </div>
+                <div class="record-view-item">
+                  <span>Year-Month</span>
+                  <strong id="view-record-month-year">-</strong>
+                </div>
+                <?php if ($isMaifDashboard): ?>
+                  <div class="record-view-item">
+                    <span>Municipality</span>
+                    <strong id="view-record-municipality">-</strong>
+                  </div>
+                  <div class="record-view-item">
+                    <span>Age</span>
+                    <strong id="view-record-age">-</strong>
+                  </div>
+                  <div class="record-view-item">
+                    <span>Birthdate</span>
+                    <strong id="view-record-birthdate">-</strong>
+                  </div>
+                  <div class="record-view-item">
+                    <span>Contact Number</span>
+                    <strong id="view-record-contact-number">-</strong>
+                  </div>
+                  <div class="record-view-item record-view-item--full">
+                    <span>Diagnosis</span>
+                    <strong id="view-record-diagnosis">-</strong>
+                  </div>
+                  <div class="record-view-item">
+                    <span>Hospital</span>
+                    <strong id="view-record-hospital">-</strong>
+                  </div>
+                  <div class="record-view-item">
+                    <span>Contact Person</span>
+                    <strong id="view-record-contact-person">-</strong>
+                  </div>
+                <?php else: ?>
+                  <div class="record-view-item record-view-item--muted hidden" aria-hidden="true">
+                    <span>Municipality</span>
+                    <strong id="view-record-municipality">-</strong>
+                  </div>
+                  <div class="record-view-item record-view-item--muted hidden" aria-hidden="true">
+                    <span>Age</span>
+                    <strong id="view-record-age">-</strong>
+                  </div>
+                  <div class="record-view-item record-view-item--muted hidden" aria-hidden="true">
+                    <span>Birthdate</span>
+                    <strong id="view-record-birthdate">-</strong>
+                  </div>
+                  <div class="record-view-item record-view-item--muted hidden" aria-hidden="true">
+                    <span>Contact Number</span>
+                    <strong id="view-record-contact-number">-</strong>
+                  </div>
+                  <div class="record-view-item record-view-item--muted hidden" aria-hidden="true">
+                    <span>Diagnosis</span>
+                    <strong id="view-record-diagnosis">-</strong>
+                  </div>
+                  <div class="record-view-item record-view-item--muted hidden" aria-hidden="true">
+                    <span>Hospital</span>
+                    <strong id="view-record-hospital">-</strong>
+                  </div>
+                  <div class="record-view-item record-view-item--muted hidden" aria-hidden="true">
+                    <span>Contact Person</span>
+                    <strong id="view-record-contact-person">-</strong>
+                  </div>
+                <?php endif; ?>
+              </div>
+            </div>
+          </div>
+          <aside class="record-view-side">
+            <div class="record-view-side__card">
+              <p class="record-view-section__title">Notes</p>
+              <div class="record-view-notes-panel">
+                <strong id="view-record-notes">-</strong>
+              </div>
+            </div>
+          </aside>
         </div>
         <div class="actions record-view-actions">
           <button type="button" class="btn btn--secondary btn--sm record-view-print-btn" id="record-view-print" aria-label="Print record details">

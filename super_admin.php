@@ -619,6 +619,78 @@ $chartPalette = [
   "#ec4899",
 ];
 
+$officeStats = [
+  [
+    "name" => "Municipality",
+    "scope" => "municipality",
+    "count" => 0,
+  ],
+  [
+    "name" => "Borabod",
+    "scope" => "borabod",
+    "count" => 0,
+  ],
+  [
+    "name" => "MAIF",
+    "scope" => "maif",
+    "count" => 0,
+  ],
+];
+$officeCountMap = [];
+$officeTotalsRs = @$conn->query(
+  "SELECT COALESCE(NULLIF(TRIM(office_scope), ''), 'municipality') AS office_name, COUNT(*) AS total_records
+   FROM records
+   GROUP BY COALESCE(NULLIF(TRIM(office_scope), ''), 'municipality')
+   ORDER BY office_name ASC"
+);
+if ($officeTotalsRs) {
+  while ($row = $officeTotalsRs->fetch_assoc()) {
+    $officeKey = normalize_office_scope_name((string)($row["office_name"] ?? ""));
+    if ($officeKey === "") {
+      $officeKey = "municipality";
+    }
+    $officeCountMap[$officeKey] = (int)($row["total_records"] ?? 0);
+  }
+}
+$officeRecordTotal = 0;
+foreach ($officeStats as $idx => $officeEntry) {
+  $scope = (string)$officeEntry["scope"];
+  $count = (int)($officeCountMap[$scope] ?? 0);
+  $officeStats[$idx]["count"] = $count;
+  $officeRecordTotal += $count;
+}
+if ($officeRecordTotal > 0) {
+  foreach ($officeStats as $idx => $officeEntry) {
+    $officeStats[$idx]["percentage"] = ((float)$officeEntry["count"] / (float)$officeRecordTotal) * 100.0;
+  }
+} else {
+  foreach ($officeStats as $idx => $officeEntry) {
+    $officeStats[$idx]["percentage"] = 0.0;
+  }
+}
+$officeChartItems = $officeStats;
+$officeGradientParts = [];
+$officeCursor = 0.0;
+foreach ($officeChartItems as $idx => $item) {
+  $pct = (float)($item["percentage"] ?? 0.0);
+  $color = $chartPalette[$idx % count($chartPalette)];
+  $officeChartItems[$idx]["color"] = $color;
+  if ($pct <= 0) {
+    continue;
+  }
+
+  $start = $officeCursor;
+  $end = min(100.0, $start + $pct);
+  $officeGradientParts[] = $color . " " . number_format($start, 2, ".", "") . "% " . number_format($end, 2, ".", "") . "%";
+  $officeCursor = $end;
+}
+if ($officeCursor < 100.0 && !empty($officeGradientParts)) {
+  $officeGradientParts[] = "#dbeafe " . number_format($officeCursor, 2, ".", "") . "% 100%";
+}
+$officeDonutGradient = !empty($officeGradientParts)
+  ? ("conic-gradient(" . implode(", ", $officeGradientParts) . ")")
+  : "conic-gradient(#e2e8f0 0% 100%)";
+
 $barangayAmountStats = [];
 $amountTotalForPercentage = 0.0;
 $barangayAmountRs = @$conn->query(
@@ -1008,7 +1080,7 @@ $saBaseQuery = [
     <section class="card sa-global-stats">
       <div class="card__header">
         <h2 class="card__title">Global Statistics</h2>
-        <p class="card__sub">Compact percentage view for barangay and assistance type distribution.</p>
+        <p class="card__sub">Compact percentage view for barangay, office, and assistance type distribution.</p>
       </div>
       <div class="card__body sa-global-stats__body">
         <div class="sa-stats-layout">
@@ -1039,6 +1111,35 @@ $saBaseQuery = [
                 </div>
               <?php else: ?>
                 <p class="muted">No barangay statistics available yet.</p>
+              <?php endif; ?>
+            </div>
+
+            <div class="sa-distribution-card">
+              <div class="sa-distribution-card__head">
+                <h3>Office Record Percentage</h3>
+                <p><?php echo number_format($officeRecordTotal); ?> total office-scoped record<?php echo ($officeRecordTotal === 1 ? "" : "s"); ?>.</p>
+              </div>
+              <?php if ($officeRecordTotal > 0): ?>
+                <div class="sa-donut-layout js-donut-interactive">
+                  <div class="sa-donut" style="--donut-fill: <?php echo htmlspecialchars($officeDonutGradient, ENT_QUOTES); ?>;">
+                    <div class="sa-donut__center js-donut-center">
+                      <strong><?php echo number_format((int)$officeRecordTotal); ?> record<?php echo ((int)$officeRecordTotal === 1 ? "" : "s"); ?></strong>
+                      <small class="js-donut-mid">100.0%</small>
+                      <span class="js-donut-sub">All Offices</span>
+                    </div>
+                  </div>
+                  <ul class="sa-legend-list">
+                    <?php foreach ($officeChartItems as $item): ?>
+                      <li class="sa-legend-item" data-donut-top="<?php echo htmlspecialchars(number_format((int)($item["count"] ?? 0)) . " record" . (((int)($item["count"] ?? 0) === 1) ? "" : "s"), ENT_QUOTES); ?>" data-donut-mid="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 1) . "%", ENT_QUOTES); ?>" data-donut-bottom="<?php echo htmlspecialchars((string)($item["name"] ?? ""), ENT_QUOTES); ?>" data-donut-pct="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 4, ".", ""), ENT_QUOTES); ?>">
+                        <span class="sa-legend-swatch" style="--legend-color: <?php echo htmlspecialchars((string)($item["color"] ?? "#94a3b8"), ENT_QUOTES); ?>;"></span>
+                        <span class="sa-legend-name"><?php echo htmlspecialchars((string)($item["name"] ?? "")); ?></span>
+                        <span class="sa-legend-meta"><?php echo number_format((int)($item["count"] ?? 0)); ?> (<?php echo number_format((float)($item["percentage"] ?? 0.0), 1); ?>%)</span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </div>
+              <?php else: ?>
+                <p class="muted">No office statistics available yet.</p>
               <?php endif; ?>
             </div>
 
