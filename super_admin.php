@@ -43,6 +43,68 @@ function build_sa_query(array $base, array $override = []): string {
   return http_build_query($q);
 }
 
+function format_office_scope_name(string $officeScope): string {
+  $officeScope = normalize_office_scope_name(trim($officeScope));
+  if ($officeScope === "maif") {
+    return "MAIF";
+  }
+  if ($officeScope === "borabod") {
+    return "Borabod";
+  }
+  return ($officeScope === "" ? "Municipality" : ucfirst($officeScope));
+}
+
+function build_line_chart_geometry(array $values, int $width = 640, int $height = 220, int $padX = 18, int $padY = 20, ?float $maxOverride = null): array {
+  $count = count($values);
+  if ($count === 0) {
+    return [
+      "polyline" => "",
+      "points" => [],
+      "max" => 0,
+      "width" => $width,
+      "height" => $height,
+    ];
+  }
+
+  $maxValue = ($maxOverride !== null) ? (float)$maxOverride : 0.0;
+  if ($maxOverride === null) {
+    foreach ($values as $value) {
+      $maxValue = max($maxValue, (float)$value);
+    }
+  }
+  if ($maxValue <= 0) {
+    $maxValue = 1.0;
+  }
+
+  $usableWidth = max(1, $width - ($padX * 2));
+  $usableHeight = max(1, $height - ($padY * 2));
+  $points = [];
+
+  foreach ($values as $idx => $value) {
+    $ratioX = ($count === 1) ? 0.5 : ($idx / ($count - 1));
+    $ratioY = min(1.0, max(0.0, ((float)$value / $maxValue)));
+    $x = $padX + ($usableWidth * $ratioX);
+    $y = $height - $padY - ($usableHeight * $ratioY);
+    $points[] = [
+      "x" => round($x, 2),
+      "y" => round($y, 2),
+      "value" => (float)$value,
+    ];
+  }
+
+  $polyline = implode(" ", array_map(function ($point) {
+    return number_format((float)$point["x"], 2, ".", "") . "," . number_format((float)$point["y"], 2, ".", "");
+  }, $points));
+
+  return [
+    "polyline" => $polyline,
+    "points" => $points,
+    "max" => $maxValue,
+    "width" => $width,
+    "height" => $height,
+  ];
+}
+
 function daet_barangays(): array {
   return [
     "Barangay 1",
@@ -121,6 +183,17 @@ $status = trim((string)($_GET["status"] ?? ""));
 $msg = trim((string)($_GET["msg"] ?? ""));
 $authUser = current_auth_user();
 $tzLabel = app_timezone_label();
+$reportPeriod = trim((string)($_GET["report_period"] ?? "all"));
+$reportOfficeFilter = normalize_office_scope_name(trim((string)($_GET["report_office"] ?? "")));
+$reportBarangayFilter = normalize_barangay_choice((string)($_GET["report_barangay"] ?? ""), $barangayChoices);
+$allowedReportPeriods = ["all", "daily", "monthly", "yearly"];
+if (!in_array($reportPeriod, $allowedReportPeriods, true)) {
+  $reportPeriod = "all";
+}
+$allowedReportOffices = ["", "municipality", "maif", "borabod"];
+if (!in_array($reportOfficeFilter, $allowedReportOffices, true)) {
+  $reportOfficeFilter = "";
+}
 
 function redirect_super_admin(string $status, string $message, string $extraQuery = ""): void {
   $base = "super_admin.php?status=" . urlencode($status) . "&msg=" . urlencode($message);
@@ -588,6 +661,248 @@ $logsCountRs = @$conn->query("SELECT COUNT(*) AS total_logs FROM auth_audit_logs
 if ($logsCountRs && $row = $logsCountRs->fetch_assoc()) {
   $totalLogs = (int)($row["total_logs"] ?? 0);
 }
+
+$todayDate = date("Y-m-d");
+$monthStartDate = date("Y-m-01");
+$monthEndDate = date("Y-m-t");
+$yearStartDate = date("Y-01-01");
+$yearEndDate = date("Y-12-31");
+$reportPeriodMeta = "Tracking statistics for all saved records.";
+$reportGeneratedAt = format_utc_datetime_for_app(gmdate("Y-m-d H:i:s")) . " " . $tzLabel;
+$reportStatsConditions = [];
+$reportStatsParamTypes = "";
+$reportStatsParams = [];
+if ($reportPeriod === "daily") {
+  $reportPeriodMeta = "Tracking statistics for " . date("F j, Y") . ".";
+  $reportStatsConditions[] = "record_date = ?";
+  $reportStatsParamTypes .= "s";
+  $reportStatsParams[] = $todayDate;
+} elseif ($reportPeriod === "monthly") {
+  $reportPeriodMeta = "Tracking statistics for " . date("F Y") . ".";
+  $reportStatsConditions[] = "record_date BETWEEN ? AND ?";
+  $reportStatsParamTypes .= "ss";
+  $reportStatsParams[] = $monthStartDate;
+  $reportStatsParams[] = $monthEndDate;
+} elseif ($reportPeriod === "yearly") {
+  $reportPeriodMeta = "Tracking statistics for " . date("Y") . ".";
+  $reportStatsConditions[] = "record_date BETWEEN ? AND ?";
+  $reportStatsParamTypes .= "ss";
+  $reportStatsParams[] = $yearStartDate;
+  $reportStatsParams[] = $yearEndDate;
+}
+if ($reportOfficeFilter !== "") {
+  $reportStatsConditions[] = "COALESCE(NULLIF(LOWER(TRIM(office_scope)), ''), 'municipality') = ?";
+  $reportStatsParamTypes .= "s";
+  $reportStatsParams[] = $reportOfficeFilter;
+}
+if ($reportBarangayFilter !== "") {
+  $reportStatsConditions[] = "barangay = ?";
+  $reportStatsParamTypes .= "s";
+  $reportStatsParams[] = $reportBarangayFilter;
+}
+$reportMetaParts = [];
+if ($reportOfficeFilter !== "") {
+  $reportMetaParts[] = "Office: " . format_office_scope_name($reportOfficeFilter);
+}
+if ($reportBarangayFilter !== "") {
+  $reportMetaParts[] = "Barangay: " . $reportBarangayFilter;
+}
+if (!empty($reportMetaParts)) {
+  $reportPeriodMeta = rtrim($reportPeriodMeta, ".") . " Filtered by " . implode(" | ", $reportMetaParts) . ".";
+}
+$reportStatsWhereSql = !empty($reportStatsConditions)
+  ? (" WHERE " . implode(" AND ", $reportStatsConditions))
+  : "";
+
+$reportTrackedRecords = 0;
+$reportTrackedAmount = 0.0;
+$reportAverageAmount = 0.0;
+$reportSummarySql = "SELECT COUNT(*) AS total_records, COALESCE(SUM(amount), 0) AS total_amount FROM records" . $reportStatsWhereSql;
+$reportSummaryStmt = $conn->prepare($reportSummarySql);
+if ($reportSummaryStmt) {
+  if (!empty($reportStatsParams)) {
+    $reportSummaryStmt->bind_param($reportStatsParamTypes, ...$reportStatsParams);
+  }
+  $reportSummaryStmt->execute();
+  $reportSummaryRs = $reportSummaryStmt->get_result();
+  if ($reportSummaryRs && $row = $reportSummaryRs->fetch_assoc()) {
+    $reportTrackedRecords = (int)($row["total_records"] ?? 0);
+    $reportTrackedAmount = (float)($row["total_amount"] ?? 0.0);
+    $reportAverageAmount = ($reportTrackedRecords > 0) ? ($reportTrackedAmount / $reportTrackedRecords) : 0.0;
+  }
+  $reportSummaryStmt->close();
+}
+
+$reportLeadingOffice = "-";
+$reportLeadingOfficeCount = 0;
+$reportLeadingOfficeSql =
+  "SELECT COALESCE(NULLIF(LOWER(TRIM(office_scope)), ''), 'municipality') AS office_name, COUNT(*) AS total_records
+   FROM records" .
+  $reportStatsWhereSql .
+  " GROUP BY COALESCE(NULLIF(LOWER(TRIM(office_scope)), ''), 'municipality')
+    ORDER BY total_records DESC, office_name ASC
+    LIMIT 1";
+$reportLeadingOfficeStmt = $conn->prepare($reportLeadingOfficeSql);
+if ($reportLeadingOfficeStmt) {
+  if (!empty($reportStatsParams)) {
+    $reportLeadingOfficeStmt->bind_param($reportStatsParamTypes, ...$reportStatsParams);
+  }
+  $reportLeadingOfficeStmt->execute();
+  $reportLeadingOfficeRs = $reportLeadingOfficeStmt->get_result();
+  if ($reportLeadingOfficeRs && $row = $reportLeadingOfficeRs->fetch_assoc()) {
+    $reportLeadingOffice = format_office_scope_name((string)($row["office_name"] ?? ""));
+    $reportLeadingOfficeCount = (int)($row["total_records"] ?? 0);
+  }
+  $reportLeadingOfficeStmt->close();
+}
+
+$reportTrendCaption = "No report data available yet.";
+$reportTrendLabels = [];
+$reportTrendBuckets = [];
+$reportTrendSeries = [];
+$reportTrendChartBase = build_line_chart_geometry([]);
+$reportTrendPointLabels = [];
+$reportTrendInteractiveData = ["labels" => [], "series" => []];
+$reportTrendOfficeScopes = ($reportOfficeFilter !== "")
+  ? [$reportOfficeFilter]
+  : ["municipality", "maif", "borabod"];
+$reportTrendPalette = [
+  "municipality" => "#2563eb",
+  "maif" => "#10b981",
+  "borabod" => "#f97316",
+];
+$reportTrendSeriesMap = [];
+
+$trendStart = null;
+$trendEnd = null;
+$trendBucketExpr = "";
+if ($reportPeriod === "daily") {
+  $trendStart = new DateTimeImmutable("-6 days");
+  $trendEnd = new DateTimeImmutable("today");
+  $trendBucketExpr = "record_date";
+  $reportTrendCaption = "Last 7 days of encoded records.";
+} elseif ($reportPeriod === "monthly") {
+  $trendStart = new DateTimeImmutable(date("Y-m-01"));
+  $trendEnd = new DateTimeImmutable(date("Y-m-t"));
+  $trendBucketExpr = "record_date";
+  $reportTrendCaption = "Daily record trend for " . date("F Y") . ".";
+} elseif ($reportPeriod === "yearly") {
+  $trendStart = new DateTimeImmutable(date("Y-01-01"));
+  $trendEnd = new DateTimeImmutable(date("Y-12-31"));
+  $trendBucketExpr = "DATE_FORMAT(record_date, '%Y-%m')";
+  $reportTrendCaption = "Monthly record trend for " . date("Y") . ".";
+} else {
+  $trendStart = (new DateTimeImmutable("first day of this month"))->sub(new DateInterval("P11M"));
+  $trendEnd = new DateTimeImmutable("last day of this month");
+  $trendBucketExpr = "DATE_FORMAT(record_date, '%Y-%m')";
+  $reportTrendCaption = "12-month record trend.";
+}
+
+$trendConditions = ["record_date BETWEEN ? AND ?"];
+$trendParamTypes = "ss";
+$trendParams = [$trendStart->format("Y-m-d"), $trendEnd->format("Y-m-d")];
+if ($reportOfficeFilter !== "") {
+  $trendConditions[] = "COALESCE(NULLIF(LOWER(TRIM(office_scope)), ''), 'municipality') = ?";
+  $trendParamTypes .= "s";
+  $trendParams[] = $reportOfficeFilter;
+}
+if ($reportBarangayFilter !== "") {
+  $trendConditions[] = "barangay = ?";
+  $trendParamTypes .= "s";
+  $trendParams[] = $reportBarangayFilter;
+}
+$trendWhereSql = " WHERE " . implode(" AND ", $trendConditions);
+$reportTrendSql =
+  "SELECT " . $trendBucketExpr . " AS bucket,
+          COALESCE(NULLIF(LOWER(TRIM(office_scope)), ''), 'municipality') AS office_name,
+          COUNT(*) AS total_records
+   FROM records" .
+  $trendWhereSql .
+  " GROUP BY bucket, COALESCE(NULLIF(LOWER(TRIM(office_scope)), ''), 'municipality')
+    ORDER BY bucket ASC";
+$reportTrendStmt = $conn->prepare($reportTrendSql);
+if ($reportTrendStmt) {
+  $reportTrendStmt->bind_param($trendParamTypes, ...$trendParams);
+  $reportTrendStmt->execute();
+  $reportTrendRs = $reportTrendStmt->get_result();
+  if ($reportTrendRs) {
+    while ($trendRow = $reportTrendRs->fetch_assoc()) {
+      $bucket = (string)($trendRow["bucket"] ?? "");
+      if ($bucket === "") continue;
+      $officeScope = normalize_office_scope_name((string)($trendRow["office_name"] ?? ""));
+      if ($officeScope === "") {
+        $officeScope = "municipality";
+      }
+      if (!isset($reportTrendSeriesMap[$officeScope])) {
+        $reportTrendSeriesMap[$officeScope] = [];
+      }
+      $reportTrendSeriesMap[$officeScope][$bucket] = (int)($trendRow["total_records"] ?? 0);
+    }
+  }
+  $reportTrendStmt->close();
+}
+
+if ($reportPeriod === "daily" || $reportPeriod === "monthly") {
+  $loopDate = $trendStart;
+  while ($loopDate <= $trendEnd) {
+    $bucket = $loopDate->format("Y-m-d");
+    $reportTrendBuckets[] = $bucket;
+    $reportTrendLabels[] = ($reportPeriod === "daily") ? $loopDate->format("M j") : $loopDate->format("j");
+    $loopDate = $loopDate->add(new DateInterval("P1D"));
+  }
+} else {
+  $loopMonth = new DateTimeImmutable($trendStart->format("Y-m-01"));
+  $endMonth = new DateTimeImmutable($trendEnd->format("Y-m-01"));
+  while ($loopMonth <= $endMonth) {
+    $bucket = $loopMonth->format("Y-m");
+    $reportTrendBuckets[] = $bucket;
+    $reportTrendLabels[] = ($reportPeriod === "yearly") ? $loopMonth->format("M") : $loopMonth->format("M y");
+    $loopMonth = $loopMonth->add(new DateInterval("P1M"));
+  }
+}
+
+$reportTrendMaxValue = 0.0;
+foreach ($reportTrendOfficeScopes as $officeScope) {
+  $seriesValues = [];
+  foreach ($reportTrendBuckets as $bucketKey) {
+    $value = (int)($reportTrendSeriesMap[$officeScope][$bucketKey] ?? 0);
+    $seriesValues[] = $value;
+    $reportTrendMaxValue = max($reportTrendMaxValue, (float)$value);
+  }
+  $reportTrendSeries[] = [
+    "scope" => $officeScope,
+    "label" => format_office_scope_name($officeScope),
+    "color" => (string)($reportTrendPalette[$officeScope] ?? "#2563eb"),
+    "values" => $seriesValues,
+  ];
+}
+if ($reportTrendMaxValue <= 0) {
+  $reportTrendMaxValue = 1.0;
+}
+$reportTrendChartBase = build_line_chart_geometry(array_fill(0, max(1, count($reportTrendBuckets)), 0), 640, 220, 18, 20, $reportTrendMaxValue);
+foreach ($reportTrendSeries as $idx => $series) {
+  $reportTrendSeries[$idx]["chart"] = build_line_chart_geometry((array)$series["values"], 640, 220, 18, 20, $reportTrendMaxValue);
+}
+$trendLabelCount = count($reportTrendLabels);
+if ($trendLabelCount > 0) {
+  $reportTrendPointLabels[0] = $reportTrendLabels[0];
+  $reportTrendPointLabels[$trendLabelCount - 1] = $reportTrendLabels[$trendLabelCount - 1];
+  if ($trendLabelCount > 2) {
+    $midIndex = (int)floor(($trendLabelCount - 1) / 2);
+    $reportTrendPointLabels[$midIndex] = $reportTrendLabels[$midIndex];
+  }
+}
+$reportTrendInteractiveData = [
+  "labels" => $reportTrendLabels,
+  "series" => array_map(function (array $series): array {
+    return [
+      "label" => (string)($series["label"] ?? ""),
+      "color" => (string)($series["color"] ?? "#2563eb"),
+      "values" => array_map("intval", (array)($series["values"] ?? [])),
+    ];
+  }, $reportTrendSeries),
+];
+
 $barangayStats = [];
 $barangayRecordTotal = 0;
 $barangayTotalsRs = @$conn->query(
@@ -1014,6 +1329,9 @@ $saBaseQuery = [
   "records_type" => $saTypeFilter,
   "records_barangay" => $saBarangayFilter,
   "records_sort" => $saRecordsSort,
+  "report_period" => $reportPeriod,
+  "report_office" => $reportOfficeFilter,
+  "report_barangay" => $reportBarangayFilter,
 ];
 ?>
 <!doctype html>
@@ -1221,6 +1539,106 @@ $saBaseQuery = [
 
           </div>
           <div class="sa-stats-right">
+            <section class="sa-summary-panel sa-summary-panel--tracking">
+              <div class="sa-summary-panel__head">
+                <h3>Report Tracking</h3>
+                <p><?php echo htmlspecialchars($reportPeriodMeta); ?></p>
+              </div>
+              <form id="sa-report-filter-form" class="sa-report-filter sa-report-filter--panel" method="GET" action="super_admin.php">
+                <input type="hidden" name="records_type" value="<?php echo htmlspecialchars($saTypeFilter); ?>" />
+                <input type="hidden" name="records_barangay" value="<?php echo htmlspecialchars($saBarangayFilter); ?>" />
+                <input type="hidden" name="records_sort" value="<?php echo htmlspecialchars($saRecordsSort); ?>" />
+                <?php if ($editUser !== ""): ?>
+                  <input type="hidden" name="edit_user" value="<?php echo htmlspecialchars($editUser); ?>" />
+                <?php endif; ?>
+                <label for="report_period" class="sa-report-filter__label">Period</label>
+                <select id="report_period" name="report_period">
+                  <option value="all" <?php echo $reportPeriod === "all" ? "selected" : ""; ?>>All Time</option>
+                  <option value="daily" <?php echo $reportPeriod === "daily" ? "selected" : ""; ?>>Daily</option>
+                  <option value="monthly" <?php echo $reportPeriod === "monthly" ? "selected" : ""; ?>>Monthly</option>
+                  <option value="yearly" <?php echo $reportPeriod === "yearly" ? "selected" : ""; ?>>Yearly</option>
+                </select>
+                <label for="report_office" class="sa-report-filter__label">Office</label>
+                <select id="report_office" name="report_office">
+                  <option value="" <?php echo $reportOfficeFilter === "" ? "selected" : ""; ?>>All Offices</option>
+                  <option value="municipality" <?php echo $reportOfficeFilter === "municipality" ? "selected" : ""; ?>>Municipality</option>
+                  <option value="maif" <?php echo $reportOfficeFilter === "maif" ? "selected" : ""; ?>>MAIF</option>
+                  <option value="borabod" <?php echo $reportOfficeFilter === "borabod" ? "selected" : ""; ?>>Borabod</option>
+                </select>
+                <label for="report_barangay" class="sa-report-filter__label">Barangay</label>
+                <select id="report_barangay" name="report_barangay">
+                  <option value="" <?php echo $reportBarangayFilter === "" ? "selected" : ""; ?>>All Barangays</option>
+                  <?php foreach ($barangayChoices as $barangayChoice): ?>
+                    <option value="<?php echo htmlspecialchars($barangayChoice); ?>" <?php echo $reportBarangayFilter === $barangayChoice ? "selected" : ""; ?>><?php echo htmlspecialchars($barangayChoice); ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </form>
+              <div class="sa-report-stat-grid">
+                <div class="sa-report-stat">
+                  <span>Records</span>
+                  <strong><?php echo number_format($reportTrackedRecords); ?></strong>
+                </div>
+                <div class="sa-report-stat">
+                  <span>Amount</span>
+                  <strong>PHP <?php echo number_format($reportTrackedAmount, 2); ?></strong>
+                </div>
+                <div class="sa-report-stat sa-report-stat--full">
+                  <span>Leading Office</span>
+                  <strong><?php echo htmlspecialchars($reportLeadingOffice); ?></strong>
+                  <small><?php echo number_format($reportLeadingOfficeCount); ?> record<?php echo ($reportLeadingOfficeCount === 1 ? "" : "s"); ?>, average PHP <?php echo number_format($reportAverageAmount, 2); ?></small>
+                </div>
+              </div>
+              <div class="sa-report-line-card">
+                <div class="sa-report-line-card__head">
+                  <span>Trend Line</span>
+                  <small><?php echo htmlspecialchars($reportTrendCaption); ?><br>Updated: <?php echo htmlspecialchars($reportGeneratedAt); ?></small>
+                </div>
+                <div class="sa-report-line-chart" id="sa-report-line-chart" tabindex="0" role="group" aria-label="<?php echo htmlspecialchars($reportTrendCaption . ". Use left and right arrow keys to inspect each point."); ?>">
+                  <svg viewBox="0 0 <?php echo (int)$reportTrendChartBase["width"]; ?> <?php echo (int)$reportTrendChartBase["height"]; ?>" role="img" aria-label="<?php echo htmlspecialchars($reportTrendCaption); ?>">
+                    <line x1="18" y1="<?php echo (int)$reportTrendChartBase["height"] - 20; ?>" x2="<?php echo (int)$reportTrendChartBase["width"] - 18; ?>" y2="<?php echo (int)$reportTrendChartBase["height"] - 20; ?>" class="sa-report-line-chart__axis"></line>
+                    <?php foreach ($reportTrendSeries as $seriesIndex => $series): ?>
+                      <polyline points="<?php echo htmlspecialchars((string)($series["chart"]["polyline"] ?? ""), ENT_QUOTES); ?>" class="sa-report-line-chart__line" style="--line-color: <?php echo htmlspecialchars((string)($series["color"] ?? "#2563eb"), ENT_QUOTES); ?>;"></polyline>
+                      <?php foreach (($series["chart"]["points"] ?? []) as $pointIndex => $point): ?>
+                        <circle
+                          cx="<?php echo htmlspecialchars(number_format((float)$point["x"], 2, ".", ""), ENT_QUOTES); ?>"
+                          cy="<?php echo htmlspecialchars(number_format((float)$point["y"], 2, ".", ""), ENT_QUOTES); ?>"
+                          r="4"
+                          class="sa-report-line-chart__dot"
+                          data-series-index="<?php echo (int)$seriesIndex; ?>"
+                          data-point-index="<?php echo (int)$pointIndex; ?>"
+                          style="--dot-color: <?php echo htmlspecialchars((string)($series["color"] ?? "#2563eb"), ENT_QUOTES); ?>;"
+                        ></circle>
+                      <?php endforeach; ?>
+                    <?php endforeach; ?>
+                  </svg>
+                </div>
+                <div class="sa-report-line-labels" style="--label-count: <?php echo max(1, (int)count($reportTrendLabels)); ?>;">
+                  <?php foreach ($reportTrendLabels as $idx => $trendLabel): ?>
+                    <span data-point-index="<?php echo (int)$idx; ?>" class="<?php echo isset($reportTrendPointLabels[$idx]) ? "is-visible" : ""; ?>">
+                      <?php echo isset($reportTrendPointLabels[$idx]) ? htmlspecialchars($trendLabel) : "&nbsp;"; ?>
+                    </span>
+                  <?php endforeach; ?>
+                </div>
+                <div class="sa-report-line-inspector" aria-live="polite">
+                  <div class="sa-report-line-inspector__head">
+                    <strong id="sa-report-line-inspector-label">-</strong>
+                  </div>
+                  <div class="sa-report-line-inspector__rows" id="sa-report-line-inspector-rows"></div>
+                  <div class="sa-report-line-inspector__hint">Tip: hover a dot or use the left/right arrow keys.</div>
+                </div>
+                <div class="sa-report-line-legend">
+                  <span class="sa-report-line-legend__title">Office Lines</span>
+                  <?php foreach ($reportTrendSeries as $series): ?>
+                    <div class="sa-report-line-legend__item">
+                      <span class="sa-report-line-legend__swatch" style="--legend-line-color: <?php echo htmlspecialchars((string)($series["color"] ?? "#2563eb"), ENT_QUOTES); ?>;"></span>
+                      <span class="sa-report-line-legend__name"><?php echo htmlspecialchars((string)($series["label"] ?? "")); ?></span>
+                    </div>
+                  <?php endforeach; ?>
+                </div>
+                <script type="application/json" id="sa-report-line-data"><?php echo json_encode($reportTrendInteractiveData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
+              </div>
+            </section>
+
             <section class="sa-summary-panel sa-summary-panel--accent">
               <div class="sa-summary-panel__label">Top Barangay</div>
               <?php if ($topBarangay): ?>
@@ -2122,6 +2540,124 @@ $saBaseQuery = [
 
         fitCenterText();
       });
+    })();
+  </script>
+  <script>
+    (function () {
+      var filterForm = document.getElementById('sa-report-filter-form');
+      if (filterForm) {
+        var autoFilters = filterForm.querySelectorAll('select');
+        autoFilters.forEach(function (field) {
+          field.addEventListener('change', function () {
+            if (typeof filterForm.requestSubmit === 'function') {
+              filterForm.requestSubmit();
+            } else {
+              filterForm.submit();
+            }
+          });
+        });
+      }
+
+      var chart = document.getElementById('sa-report-line-chart');
+      var dataEl = document.getElementById('sa-report-line-data');
+      var inspectorLabel = document.getElementById('sa-report-line-inspector-label');
+      var inspectorRows = document.getElementById('sa-report-line-inspector-rows');
+      if (!chart || !dataEl || !inspectorLabel || !inspectorRows) return;
+
+      var data = null;
+      try {
+        data = JSON.parse(dataEl.textContent || '{}');
+      } catch (err) {
+        return;
+      }
+
+      var labels = Array.isArray(data.labels) ? data.labels : [];
+      var series = Array.isArray(data.series) ? data.series : [];
+      if (!labels.length || !series.length) return;
+
+      var dots = Array.prototype.slice.call(chart.querySelectorAll('.sa-report-line-chart__dot[data-point-index]'));
+      var labelEls = Array.prototype.slice.call(document.querySelectorAll('.sa-report-line-labels span[data-point-index]'));
+      var activeIndex = labels.length - 1;
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function render(index) {
+        if (index < 0) index = 0;
+        if (index >= labels.length) index = labels.length - 1;
+        activeIndex = index;
+
+        var rowsHtml = '';
+        series.forEach(function (entry) {
+          var values = Array.isArray(entry.values) ? entry.values : [];
+          var value = Number(values[index] || 0);
+          rowsHtml += '<div class="sa-report-line-inspector__row">' +
+            '<span class="sa-report-line-inspector__office">' +
+              '<span class="sa-report-line-inspector__swatch" style="--inspector-color:' + escapeHtml(entry.color || '#2563eb') + ';"></span>' +
+              escapeHtml(entry.label || '') +
+            '</span>' +
+            '<strong>' + escapeHtml(String(value)) + ' record' + (value === 1 ? '' : 's') + '</strong>' +
+          '</div>';
+        });
+
+        inspectorLabel.textContent = labels[index] || '-';
+        inspectorRows.innerHTML = rowsHtml;
+
+        dots.forEach(function (dot) {
+          var pointIndex = Number(dot.getAttribute('data-point-index') || -1);
+          dot.classList.toggle('is-active', pointIndex === activeIndex);
+        });
+
+        labelEls.forEach(function (labelEl) {
+          var pointIndex = Number(labelEl.getAttribute('data-point-index') || -1);
+          labelEl.classList.toggle('is-selected', pointIndex === activeIndex);
+        });
+      }
+
+      chart.addEventListener('keydown', function (event) {
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          render(activeIndex - 1);
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          render(activeIndex + 1);
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          render(0);
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          render(labels.length - 1);
+        }
+      });
+
+      chart.addEventListener('click', function () {
+        chart.focus();
+      });
+
+      dots.forEach(function (dot) {
+        dot.addEventListener('mouseenter', function () {
+          var pointIndex = Number(dot.getAttribute('data-point-index') || -1);
+          if (pointIndex >= 0) {
+            render(pointIndex);
+          }
+        });
+
+        dot.addEventListener('click', function () {
+          var pointIndex = Number(dot.getAttribute('data-point-index') || -1);
+          if (pointIndex >= 0) {
+            render(pointIndex);
+          }
+          chart.focus();
+        });
+      });
+
+      render(activeIndex);
     })();
   </script>
 </body>
