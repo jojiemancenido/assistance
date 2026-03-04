@@ -3943,3 +3943,23 @@ body{
     font-size:12px;
   }
 }
+
+/* Global Statistics Layout Stabilizer */
+body.superadmin-page .sa-stats-layout{
+  align-items:start;
+}
+
+body.superadmin-page .sa-stats-left,
+body.superadmin-page .sa-stats-right{
+  align-content:start;
+}
+
+body.superadmin-page .sa-stats-right{
+  align-self:start;
+  grid-auto-rows:max-content;
+}
+
+body.superadmin-page .sa-distribution-card,
+body.superadmin-page .sa-summary-panel{
+  min-height:0;
+}

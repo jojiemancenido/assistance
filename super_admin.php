@@ -567,6 +567,16 @@ if ($amountRs && $row = $amountRs->fetch_assoc()) {
   $totalAmount = (float)($row["total_amount"] ?? 0);
 }
 
+$maifTotalAmount = 0.0;
+$maifAmountRs = @$conn->query(
+  "SELECT COALESCE(SUM(amount), 0) AS total_amount
+   FROM records
+   WHERE COALESCE(NULLIF(LOWER(TRIM(office_scope)), ''), 'municipality') = 'maif'"
+);
+if ($maifAmountRs && $row = $maifAmountRs->fetch_assoc()) {
+  $maifTotalAmount = (float)($row["total_amount"] ?? 0);
+}
+
 $totalActiveUsers = 0;
 $activeCountRs = @$conn->query("SELECT COUNT(*) AS total_active FROM auth_active_sessions WHERE expires_at >= UTC_TIMESTAMP()");
 if ($activeCountRs && $row = $activeCountRs->fetch_assoc()) {
@@ -689,6 +699,43 @@ if ($officeCursor < 100.0 && !empty($officeGradientParts)) {
 }
 $officeDonutGradient = !empty($officeGradientParts)
   ? ("conic-gradient(" . implode(", ", $officeGradientParts) . ")")
+  : "conic-gradient(#e2e8f0 0% 100%)";
+$maifRecordCount = (int)($officeCountMap["maif"] ?? 0);
+$maifAmountPercentage = ($totalAmount > 0)
+  ? (($maifTotalAmount / $totalAmount) * 100.0)
+  : 0.0;
+$nonMaifTotalAmount = max(0.0, $totalAmount - $maifTotalAmount);
+$maifAmountChartItems = [];
+if ($totalAmount > 0) {
+  $maifAmountChartItems[] = [
+    "name" => "MAIF",
+    "amount" => $maifTotalAmount,
+    "percentage" => $maifAmountPercentage,
+    "color" => "#10b981",
+  ];
+  $maifAmountChartItems[] = [
+    "name" => "Other Offices",
+    "amount" => $nonMaifTotalAmount,
+    "percentage" => max(0.0, 100.0 - $maifAmountPercentage),
+    "color" => "#2563eb",
+  ];
+}
+$maifAmountGradientParts = [];
+$maifAmountCursor = 0.0;
+foreach ($maifAmountChartItems as $item) {
+  $pct = (float)($item["percentage"] ?? 0.0);
+  if ($pct <= 0) continue;
+
+  $start = $maifAmountCursor;
+  $end = min(100.0, $start + $pct);
+  $maifAmountGradientParts[] = (string)$item["color"] . " " . number_format($start, 2, ".", "") . "% " . number_format($end, 2, ".", "") . "%";
+  $maifAmountCursor = $end;
+}
+if ($maifAmountCursor < 100.0 && !empty($maifAmountGradientParts)) {
+  $maifAmountGradientParts[] = "#dbeafe " . number_format($maifAmountCursor, 2, ".", "") . "% 100%";
+}
+$maifAmountDonutGradient = !empty($maifAmountGradientParts)
+  ? ("conic-gradient(" . implode(", ", $maifAmountGradientParts) . ")")
   : "conic-gradient(#e2e8f0 0% 100%)";
 
 $barangayAmountStats = [];
@@ -1171,6 +1218,7 @@ $saBaseQuery = [
                 <p class="muted">No assistance type statistics available yet.</p>
               <?php endif; ?>
             </div>
+
           </div>
           <div class="sa-stats-right">
             <section class="sa-summary-panel sa-summary-panel--accent">
@@ -1214,6 +1262,35 @@ $saBaseQuery = [
                 </div>
               <?php else: ?>
                 <p class="muted">No barangay amount statistics available yet.</p>
+              <?php endif; ?>
+            </section>
+
+            <section class="sa-distribution-card">
+              <div class="sa-distribution-card__head">
+                <h3>MAIF Total Amount</h3>
+                <p><?php echo number_format($maifRecordCount); ?> MAIF record<?php echo ($maifRecordCount === 1 ? "" : "s"); ?> contributing <?php echo number_format($maifAmountPercentage, 1); ?>% of all assistance amount.</p>
+              </div>
+              <?php if ($totalAmount > 0): ?>
+                <div class="sa-donut-layout js-donut-interactive">
+                  <div class="sa-donut" style="--donut-fill: <?php echo htmlspecialchars($maifAmountDonutGradient, ENT_QUOTES); ?>;">
+                    <div class="sa-donut__center js-donut-center">
+                      <strong>PHP <?php echo number_format((float)$maifTotalAmount, 2); ?></strong>
+                      <small class="js-donut-mid"><?php echo number_format((float)$maifAmountPercentage, 1); ?>%</small>
+                      <span class="js-donut-sub">MAIF Share</span>
+                    </div>
+                  </div>
+                  <ul class="sa-legend-list">
+                    <?php foreach ($maifAmountChartItems as $item): ?>
+                      <li class="sa-legend-item" data-donut-top="<?php echo htmlspecialchars("PHP " . number_format((float)($item["amount"] ?? 0.0), 2), ENT_QUOTES); ?>" data-donut-mid="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 1) . "%", ENT_QUOTES); ?>" data-donut-bottom="<?php echo htmlspecialchars((string)($item["name"] ?? ""), ENT_QUOTES); ?>" data-donut-pct="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 4, ".", ""), ENT_QUOTES); ?>">
+                        <span class="sa-legend-swatch" style="--legend-color: <?php echo htmlspecialchars((string)($item["color"] ?? "#94a3b8"), ENT_QUOTES); ?>;"></span>
+                        <span class="sa-legend-name"><?php echo htmlspecialchars((string)($item["name"] ?? "")); ?></span>
+                        <span class="sa-legend-meta">PHP <?php echo number_format((float)($item["amount"] ?? 0.0), 2); ?> (<?php echo number_format((float)($item["percentage"] ?? 0.0), 1); ?>%)</span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </div>
+              <?php else: ?>
+                <p class="muted">No MAIF amount statistics available yet.</p>
               <?php endif; ?>
             </section>
 
