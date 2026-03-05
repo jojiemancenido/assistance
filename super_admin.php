@@ -186,6 +186,7 @@ $tzLabel = app_timezone_label();
 $reportPeriod = trim((string)($_GET["report_period"] ?? "all"));
 $reportOfficeFilter = normalize_office_scope_name(trim((string)($_GET["report_office"] ?? "")));
 $reportBarangayFilter = normalize_barangay_choice((string)($_GET["report_barangay"] ?? ""), $barangayChoices);
+$reportYear = (int)($_GET["report_year"] ?? 0);
 $allowedReportPeriods = ["all", "daily", "monthly", "yearly"];
 if (!in_array($reportPeriod, $allowedReportPeriods, true)) {
   $reportPeriod = "all";
@@ -662,6 +663,30 @@ if ($logsCountRs && $row = $logsCountRs->fetch_assoc()) {
   $totalLogs = (int)($row["total_logs"] ?? 0);
 }
 
+$reportMinYear = (int)date("Y");
+$reportMaxYear = (int)date("Y");
+$yearRangeRs = @$conn->query(
+  "SELECT MIN(YEAR(record_date)) AS min_year, MAX(YEAR(record_date)) AS max_year
+   FROM records
+   WHERE record_date IS NOT NULL AND record_date <> ''"
+);
+if ($yearRangeRs && $yearRangeRow = $yearRangeRs->fetch_assoc()) {
+  $minYearDb = (int)($yearRangeRow["min_year"] ?? 0);
+  $maxYearDb = (int)($yearRangeRow["max_year"] ?? 0);
+  if ($minYearDb > 0) $reportMinYear = $minYearDb;
+  if ($maxYearDb > 0) $reportMaxYear = max($reportMinYear, $maxYearDb);
+}
+$reportYearChoices = [];
+for ($y = $reportMinYear; $y <= $reportMaxYear; $y += 1) {
+  $reportYearChoices[] = $y;
+}
+if ($reportYear <= 0) {
+  $reportYear = $reportMaxYear;
+}
+if ($reportYear < $reportMinYear || $reportYear > $reportMaxYear) {
+  $reportYear = $reportMaxYear;
+}
+
 $todayDate = date("Y-m-d");
 $monthStartDate = date("Y-m-01");
 $monthEndDate = date("Y-m-t");
@@ -684,11 +709,11 @@ if ($reportPeriod === "daily") {
   $reportStatsParams[] = $monthStartDate;
   $reportStatsParams[] = $monthEndDate;
 } elseif ($reportPeriod === "yearly") {
-  $reportPeriodMeta = "Tracking statistics for " . date("Y") . ".";
+  $reportPeriodMeta = "Tracking statistics for " . $reportYear . ".";
   $reportStatsConditions[] = "record_date BETWEEN ? AND ?";
   $reportStatsParamTypes .= "ss";
-  $reportStatsParams[] = $yearStartDate;
-  $reportStatsParams[] = $yearEndDate;
+  $reportStatsParams[] = $reportYear . "-01-01";
+  $reportStatsParams[] = $reportYear . "-12-31";
 }
 if ($reportOfficeFilter !== "") {
   $reportStatsConditions[] = "COALESCE(NULLIF(LOWER(TRIM(office_scope)), ''), 'municipality') = ?";
@@ -787,10 +812,10 @@ if ($reportPeriod === "daily") {
   $trendBucketExpr = "record_date";
   $reportTrendCaption = "Daily record trend for " . date("F Y") . ".";
 } elseif ($reportPeriod === "yearly") {
-  $trendStart = new DateTimeImmutable(date("Y-01-01"));
-  $trendEnd = new DateTimeImmutable(date("Y-12-31"));
+  $trendStart = new DateTimeImmutable($reportYear . "-01-01");
+  $trendEnd = new DateTimeImmutable($reportYear . "-12-31");
   $trendBucketExpr = "DATE_FORMAT(record_date, '%Y-%m')";
-  $reportTrendCaption = "Monthly record trend for " . date("Y") . ".";
+  $reportTrendCaption = "Monthly record trend for " . $reportYear . ".";
 } else {
   $trendStart = (new DateTimeImmutable("first day of this month"))->sub(new DateInterval("P11M"));
   $trendEnd = new DateTimeImmutable("last day of this month");
@@ -847,7 +872,7 @@ if ($reportPeriod === "daily" || $reportPeriod === "monthly") {
   while ($loopDate <= $trendEnd) {
     $bucket = $loopDate->format("Y-m-d");
     $reportTrendBuckets[] = $bucket;
-    $reportTrendLabels[] = ($reportPeriod === "daily") ? $loopDate->format("M j") : $loopDate->format("j");
+    $reportTrendLabels[] = ($reportPeriod === "daily") ? $loopDate->format("M j, Y") : $loopDate->format("M j, Y");
     $loopDate = $loopDate->add(new DateInterval("P1D"));
   }
 } else {
@@ -856,7 +881,7 @@ if ($reportPeriod === "daily" || $reportPeriod === "monthly") {
   while ($loopMonth <= $endMonth) {
     $bucket = $loopMonth->format("Y-m");
     $reportTrendBuckets[] = $bucket;
-    $reportTrendLabels[] = ($reportPeriod === "yearly") ? $loopMonth->format("M") : $loopMonth->format("M y");
+    $reportTrendLabels[] = ($reportPeriod === "yearly") ? $loopMonth->format("M Y") : $loopMonth->format("M Y");
     $loopMonth = $loopMonth->add(new DateInterval("P1M"));
   }
 }
@@ -1330,9 +1355,54 @@ $saBaseQuery = [
   "records_barangay" => $saBarangayFilter,
   "records_sort" => $saRecordsSort,
   "report_period" => $reportPeriod,
+  "report_year" => $reportYear,
   "report_office" => $reportOfficeFilter,
   "report_barangay" => $reportBarangayFilter,
 ];
+
+if (isset($_GET["report_tracking_live"]) && $_GET["report_tracking_live"] === "1") {
+  $reportPointLabelIndexes = array_map("intval", array_keys($reportTrendPointLabels));
+  sort($reportPointLabelIndexes);
+  $reportSeriesPayload = array_map(function (array $series): array {
+    $points = [];
+    foreach ((array)($series["chart"]["points"] ?? []) as $point) {
+      $points[] = [
+        "x" => (float)($point["x"] ?? 0.0),
+        "y" => (float)($point["y"] ?? 0.0),
+      ];
+    }
+    return [
+      "label" => (string)($series["label"] ?? ""),
+      "color" => (string)($series["color"] ?? "#2563eb"),
+      "polyline" => (string)($series["chart"]["polyline"] ?? ""),
+      "points" => $points,
+      "values" => array_map("intval", (array)($series["values"] ?? [])),
+    ];
+  }, $reportTrendSeries);
+
+  header("Content-Type: application/json; charset=utf-8");
+  echo json_encode([
+    "ok" => true,
+    "period_meta" => $reportPeriodMeta,
+    "generated_at" => "Updated: " . $reportGeneratedAt,
+    "tracked_records" => $reportTrackedRecords,
+    "tracked_records_display" => number_format($reportTrackedRecords),
+    "tracked_amount" => $reportTrackedAmount,
+    "tracked_amount_display" => "PHP " . number_format($reportTrackedAmount, 2),
+    "trend" => [
+      "caption" => $reportTrendCaption,
+      "chart" => [
+        "width" => (int)($reportTrendChartBase["width"] ?? 640),
+        "height" => (int)($reportTrendChartBase["height"] ?? 220),
+      ],
+      "labels" => $reportTrendLabels,
+      "point_label_indexes" => $reportPointLabelIndexes,
+      "series" => $reportSeriesPayload,
+      "interactive" => $reportTrendInteractiveData,
+    ],
+  ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  exit;
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -1449,7 +1519,7 @@ $saBaseQuery = [
       </div>
       <div class="card__body sa-global-stats__body">
         <div class="sa-stats-layout">
-          <div class="sa-stats-left">
+          <div class="sa-stats-grid">
             <div class="sa-distribution-card">
               <div class="sa-distribution-card__head">
                 <h3>Barangay Record Percentage</h3>
@@ -1537,12 +1607,91 @@ $saBaseQuery = [
               <?php endif; ?>
             </div>
 
+            <section class="sa-summary-panel sa-summary-panel--accent">
+              <div class="sa-summary-panel__label">Top Barangay</div>
+              <?php if ($topBarangay): ?>
+                <div class="sa-summary-panel__value"><?php echo htmlspecialchars((string)$topBarangay["name"]); ?></div>
+                <div class="sa-summary-panel__meta">
+                  <?php echo number_format((int)$topBarangay["count"]); ?> records
+                  (<?php echo number_format((float)($topBarangay["percentage"] ?? 0.0), 1); ?>%)
+                </div>
+              <?php else: ?>
+                <div class="sa-summary-panel__value">-</div>
+                <div class="sa-summary-panel__meta">No barangay data yet</div>
+              <?php endif; ?>
+              <div class="sa-summary-panel__divider" aria-hidden="true"></div>
+              <div class="sa-summary-panel__subhead">Leading Office</div>
+              <div class="sa-summary-panel__subvalue"><?php echo htmlspecialchars($reportLeadingOffice); ?></div>
+              <div class="sa-summary-panel__meta">
+                <?php echo number_format($reportLeadingOfficeCount); ?> record<?php echo ($reportLeadingOfficeCount === 1 ? "" : "s"); ?>, average PHP <?php echo number_format($reportAverageAmount, 2); ?>
+              </div>
+            </section>
+
+            <section class="sa-summary-panel sa-summary-panel--amount">
+              <div class="sa-summary-panel__head">
+                <h3>Total Amount</h3>
+                <p>Barangay share by assistance amount.</p>
+              </div>
+              <div class="sa-summary-panel__value">PHP <?php echo number_format($totalAmount, 2); ?></div>
+              <?php if (!empty($amountBarangayChartItems)): ?>
+                <div class="sa-donut-layout sa-donut-layout--compact js-donut-interactive">
+                  <div class="sa-donut" style="--donut-fill: <?php echo htmlspecialchars($amountBarangayDonutGradient, ENT_QUOTES); ?>;">
+                    <div class="sa-donut__center js-donut-center">
+                      <strong>PHP <?php echo number_format((float)$totalAmount, 2); ?></strong>
+                      <small class="js-donut-mid">100.0%</small>
+                      <span class="js-donut-sub sa-donut-sub">All Barangays</span>
+                    </div>
+                  </div>
+                  <ul class="sa-legend-list sa-legend-list--compact">
+                    <?php foreach ($amountBarangayChartItems as $item): ?>
+                      <li class="sa-legend-item" data-donut-top="<?php echo htmlspecialchars("PHP " . number_format((float)($item["amount"] ?? 0.0), 2), ENT_QUOTES); ?>" data-donut-mid="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 1) . "%", ENT_QUOTES); ?>" data-donut-bottom="<?php echo htmlspecialchars((string)($item["name"] ?? ""), ENT_QUOTES); ?>" data-donut-pct="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 4, ".", ""), ENT_QUOTES); ?>">
+                        <span class="sa-legend-swatch" style="--legend-color: <?php echo htmlspecialchars((string)($item["color"] ?? "#94a3b8"), ENT_QUOTES); ?>;"></span>
+                        <span class="sa-legend-name"><?php echo htmlspecialchars((string)($item["name"] ?? "")); ?></span>
+                        <span class="sa-legend-meta">PHP <?php echo number_format((float)($item["amount"] ?? 0.0), 2); ?> (<?php echo number_format((float)($item["percentage"] ?? 0.0), 1); ?>%)</span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </div>
+              <?php else: ?>
+                <p class="muted">No barangay amount statistics available yet.</p>
+              <?php endif; ?>
+            </section>
+
+            <section class="sa-distribution-card">
+              <div class="sa-distribution-card__head">
+                <h3>MAIF Total Amount</h3>
+                <p><?php echo number_format($maifRecordCount); ?> MAIF record<?php echo ($maifRecordCount === 1 ? "" : "s"); ?> contributing <?php echo number_format($maifAmountPercentage, 1); ?>% of all assistance amount.</p>
+              </div>
+              <?php if ($totalAmount > 0): ?>
+                <div class="sa-donut-layout js-donut-interactive">
+                  <div class="sa-donut" style="--donut-fill: <?php echo htmlspecialchars($maifAmountDonutGradient, ENT_QUOTES); ?>;">
+                    <div class="sa-donut__center js-donut-center">
+                      <strong>PHP <?php echo number_format((float)$maifTotalAmount, 2); ?></strong>
+                      <small class="js-donut-mid"><?php echo number_format((float)$maifAmountPercentage, 1); ?>%</small>
+                      <span class="js-donut-sub sa-donut-sub">MAIF Share</span>
+                    </div>
+                  </div>
+                  <ul class="sa-legend-list">
+                    <?php foreach ($maifAmountChartItems as $item): ?>
+                      <li class="sa-legend-item" data-donut-top="<?php echo htmlspecialchars("PHP " . number_format((float)($item["amount"] ?? 0.0), 2), ENT_QUOTES); ?>" data-donut-mid="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 1) . "%", ENT_QUOTES); ?>" data-donut-bottom="<?php echo htmlspecialchars((string)($item["name"] ?? ""), ENT_QUOTES); ?>" data-donut-pct="<?php echo htmlspecialchars(number_format((float)($item["percentage"] ?? 0.0), 4, ".", ""), ENT_QUOTES); ?>">
+                        <span class="sa-legend-swatch" style="--legend-color: <?php echo htmlspecialchars((string)($item["color"] ?? "#94a3b8"), ENT_QUOTES); ?>;"></span>
+                        <span class="sa-legend-name"><?php echo htmlspecialchars((string)($item["name"] ?? "")); ?></span>
+                        <span class="sa-legend-meta">PHP <?php echo number_format((float)($item["amount"] ?? 0.0), 2); ?> (<?php echo number_format((float)($item["percentage"] ?? 0.0), 1); ?>%)</span>
+                      </li>
+                    <?php endforeach; ?>
+                  </ul>
+                </div>
+              <?php else: ?>
+                <p class="muted">No MAIF amount statistics available yet.</p>
+              <?php endif; ?>
+            </section>
+
           </div>
           <div class="sa-stats-right">
             <section class="sa-summary-panel sa-summary-panel--tracking">
               <div class="sa-summary-panel__head">
                 <h3>Report Tracking</h3>
-                <p><?php echo htmlspecialchars($reportPeriodMeta); ?></p>
+                <p id="sa-report-period-meta"><?php echo htmlspecialchars($reportPeriodMeta); ?></p>
               </div>
               <form id="sa-report-filter-form" class="sa-report-filter sa-report-filter--panel" method="GET" action="super_admin.php">
                 <input type="hidden" name="records_type" value="<?php echo htmlspecialchars($saTypeFilter); ?>" />
@@ -1551,47 +1700,56 @@ $saBaseQuery = [
                 <?php if ($editUser !== ""): ?>
                   <input type="hidden" name="edit_user" value="<?php echo htmlspecialchars($editUser); ?>" />
                 <?php endif; ?>
-                <label for="report_period" class="sa-report-filter__label">Period</label>
-                <select id="report_period" name="report_period">
+                <div class="sa-report-filter__field">
+                  <label for="report_period" class="sa-report-filter__label">Period</label>
+                  <select id="report_period" name="report_period">
                   <option value="all" <?php echo $reportPeriod === "all" ? "selected" : ""; ?>>All Time</option>
                   <option value="daily" <?php echo $reportPeriod === "daily" ? "selected" : ""; ?>>Daily</option>
                   <option value="monthly" <?php echo $reportPeriod === "monthly" ? "selected" : ""; ?>>Monthly</option>
                   <option value="yearly" <?php echo $reportPeriod === "yearly" ? "selected" : ""; ?>>Yearly</option>
                 </select>
-                <label for="report_office" class="sa-report-filter__label">Office</label>
-                <select id="report_office" name="report_office">
+                </div>
+                <div class="sa-report-filter__field">
+                  <label for="report_year" class="sa-report-filter__label">Year</label>
+                  <select id="report_year" name="report_year">
+                    <?php foreach ($reportYearChoices as $yearChoice): ?>
+                      <option value="<?php echo (int)$yearChoice; ?>" <?php echo ((int)$reportYear === (int)$yearChoice) ? "selected" : ""; ?>><?php echo htmlspecialchars((string)$yearChoice); ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+                <div class="sa-report-filter__field">
+                  <label for="report_office" class="sa-report-filter__label">Office</label>
+                  <select id="report_office" name="report_office">
                   <option value="" <?php echo $reportOfficeFilter === "" ? "selected" : ""; ?>>All Offices</option>
                   <option value="municipality" <?php echo $reportOfficeFilter === "municipality" ? "selected" : ""; ?>>Municipality</option>
                   <option value="maif" <?php echo $reportOfficeFilter === "maif" ? "selected" : ""; ?>>MAIF</option>
                   <option value="borabod" <?php echo $reportOfficeFilter === "borabod" ? "selected" : ""; ?>>Borabod</option>
                 </select>
-                <label for="report_barangay" class="sa-report-filter__label">Barangay</label>
-                <select id="report_barangay" name="report_barangay">
+                </div>
+                <div class="sa-report-filter__field">
+                  <label for="report_barangay" class="sa-report-filter__label">Barangay</label>
+                  <select id="report_barangay" name="report_barangay">
                   <option value="" <?php echo $reportBarangayFilter === "" ? "selected" : ""; ?>>All Barangays</option>
                   <?php foreach ($barangayChoices as $barangayChoice): ?>
                     <option value="<?php echo htmlspecialchars($barangayChoice); ?>" <?php echo $reportBarangayFilter === $barangayChoice ? "selected" : ""; ?>><?php echo htmlspecialchars($barangayChoice); ?></option>
                   <?php endforeach; ?>
                 </select>
+                </div>
               </form>
               <div class="sa-report-stat-grid">
                 <div class="sa-report-stat">
                   <span>Records</span>
-                  <strong><?php echo number_format($reportTrackedRecords); ?></strong>
+                  <strong id="sa-report-tracked-records"><?php echo number_format($reportTrackedRecords); ?></strong>
                 </div>
                 <div class="sa-report-stat">
                   <span>Amount</span>
-                  <strong>PHP <?php echo number_format($reportTrackedAmount, 2); ?></strong>
-                </div>
-                <div class="sa-report-stat sa-report-stat--full">
-                  <span>Leading Office</span>
-                  <strong><?php echo htmlspecialchars($reportLeadingOffice); ?></strong>
-                  <small><?php echo number_format($reportLeadingOfficeCount); ?> record<?php echo ($reportLeadingOfficeCount === 1 ? "" : "s"); ?>, average PHP <?php echo number_format($reportAverageAmount, 2); ?></small>
+                  <strong id="sa-report-tracked-amount">PHP <?php echo number_format($reportTrackedAmount, 2); ?></strong>
                 </div>
               </div>
               <div class="sa-report-line-card">
                 <div class="sa-report-line-card__head">
                   <span>Trend Line</span>
-                  <small><?php echo htmlspecialchars($reportTrendCaption); ?><br>Updated: <?php echo htmlspecialchars($reportGeneratedAt); ?></small>
+                  <small id="sa-report-generated-at">Updated: <?php echo htmlspecialchars($reportGeneratedAt); ?></small>
                 </div>
                 <div class="sa-report-line-chart" id="sa-report-line-chart" tabindex="0" role="group" aria-label="<?php echo htmlspecialchars($reportTrendCaption . ". Use left and right arrow keys to inspect each point."); ?>">
                   <svg viewBox="0 0 <?php echo (int)$reportTrendChartBase["width"]; ?> <?php echo (int)$reportTrendChartBase["height"]; ?>" role="img" aria-label="<?php echo htmlspecialchars($reportTrendCaption); ?>">
@@ -1612,7 +1770,7 @@ $saBaseQuery = [
                     <?php endforeach; ?>
                   </svg>
                 </div>
-                <div class="sa-report-line-labels" style="--label-count: <?php echo max(1, (int)count($reportTrendLabels)); ?>;">
+                <div class="sa-report-line-labels" id="sa-report-line-labels" style="--label-count: <?php echo max(1, (int)count($reportTrendLabels)); ?>;">
                   <?php foreach ($reportTrendLabels as $idx => $trendLabel): ?>
                     <span data-point-index="<?php echo (int)$idx; ?>" class="<?php echo isset($reportTrendPointLabels[$idx]) ? "is-visible" : ""; ?>">
                       <?php echo isset($reportTrendPointLabels[$idx]) ? htmlspecialchars($trendLabel) : "&nbsp;"; ?>
@@ -1626,7 +1784,7 @@ $saBaseQuery = [
                   <div class="sa-report-line-inspector__rows" id="sa-report-line-inspector-rows"></div>
                   <div class="sa-report-line-inspector__hint">Tip: hover a dot or use the left/right arrow keys.</div>
                 </div>
-                <div class="sa-report-line-legend">
+                <div class="sa-report-line-legend" id="sa-report-line-legend">
                   <span class="sa-report-line-legend__title">Office Lines</span>
                   <?php foreach ($reportTrendSeries as $series): ?>
                     <div class="sa-report-line-legend__item">
@@ -1651,6 +1809,12 @@ $saBaseQuery = [
                 <div class="sa-summary-panel__value">-</div>
                 <div class="sa-summary-panel__meta">No barangay data yet</div>
               <?php endif; ?>
+              <div class="sa-summary-panel__divider" aria-hidden="true"></div>
+              <div class="sa-summary-panel__subhead">Leading Office</div>
+              <div class="sa-summary-panel__subvalue"><?php echo htmlspecialchars($reportLeadingOffice); ?></div>
+              <div class="sa-summary-panel__meta">
+                <?php echo number_format($reportLeadingOfficeCount); ?> record<?php echo ($reportLeadingOfficeCount === 1 ? "" : "s"); ?>, average PHP <?php echo number_format($reportAverageAmount, 2); ?>
+              </div>
             </section>
 
             <section class="sa-summary-panel sa-summary-panel--amount">
@@ -1744,77 +1908,15 @@ $saBaseQuery = [
           <h2 class="card__title">Account Center</h2>
           <p class="card__sub">Create new accounts and manage all record accounts in one place.</p>
         </div>
-        <div class="accounts-hub__badges">
-          <span class="accounts-hub__badge"><strong><?php echo number_format($totalAccounts); ?></strong> Total</span>
-          <span class="accounts-hub__badge accounts-hub__badge--active"><strong><?php echo number_format($totalActiveUsers); ?></strong> Active</span>
+        <div class="accounts-hub__tools">
+          <div class="accounts-hub__badges">
+            <span class="accounts-hub__badge"><strong><?php echo number_format($totalAccounts); ?></strong> Total</span>
+            <span class="accounts-hub__badge accounts-hub__badge--active"><strong><?php echo number_format($totalActiveUsers); ?></strong> Active</span>
+          </div>
+          <button type="button" id="open-create-account-modal" class="btn btn--sm">Create Account</button>
         </div>
       </div>
       <div class="card__body accounts-hub__body">
-        <details id="create-account-panel" class="accounts-create-disclosure">
-          <summary class="accounts-create-disclosure__summary">
-            <div class="accounts-create-disclosure__title">
-              <span class="accounts-create-kicker">Account Manager</span>
-              <h3>Create Account</h3>
-              <p>Create admin, user, barangay, or super_admin credentials in a secure form.</p>
-            </div>
-            <div class="accounts-create-disclosure__meta">
-              <span class="accounts-create-disclosure__chip">Secure Form</span>
-              <span class="accounts-create-disclosure__plus" aria-hidden="true">+</span>
-            </div>
-          </summary>
-          <div class="accounts-create-panel">
-            <div class="accounts-create-panel__intro">
-              <h4>New Account Setup</h4>
-              <p>Assign username, password, role, and office. Accounts appear instantly in the table below.</p>
-            </div>
-            <form class="accounts-create-form" method="POST" action="super_admin.php" autocomplete="off">
-              <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
-              <input type="hidden" name="action" value="create_account" />
-              <div class="form-grid accounts-create-grid">
-                <div class="field">
-                  <label for="new_username">Username</label>
-                  <input id="new_username" name="new_username" type="text" required placeholder="Enter username" />
-                </div>
-                <div class="field">
-                  <label for="new_password">Password</label>
-                  <input id="new_password" name="new_password" type="password" required placeholder="Enter secure password" />
-                </div>
-                <div class="field accounts-create-role">
-                  <label for="new_role">Role</label>
-                  <select id="new_role" name="new_role">
-                    <option value="admin">admin</option>
-                    <option value="user">user</option>
-                    <option value="barangay">barangay</option>
-                    <option value="maif">MAIF</option>
-                    <option value="super_admin">super_admin</option>
-                  </select>
-                </div>
-                <div class="field" id="newOfficeScopeWrap">
-                  <label for="new_office_scope">Office</label>
-                  <select id="new_office_scope" name="new_office_scope">
-                    <option value="municipality" selected>Municipality</option>
-                    <option value="borabod">Borabod</option>
-                    <option value="maif">MAIF</option>
-                  </select>
-                </div>
-                <div class="field field--full hidden" id="newBarangayScopeWrap">
-                  <label for="new_barangay_scope">Barangay Scope</label>
-                  <select id="new_barangay_scope" name="new_barangay_scope">
-                    <option value="" selected>Select barangay</option>
-                    <?php foreach ($barangayChoices as $bChoice): ?>
-                      <option value="<?php echo htmlspecialchars($bChoice); ?>"><?php echo htmlspecialchars($bChoice); ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                </div>
-              </div>
-              <div class="actions accounts-create-actions">
-                <button class="btn" type="submit">Create Account</button>
-                <span class="accounts-create-actions__note">Use strong passwords for higher-privilege roles.</span>
-              </div>
-            </form>
-          </div>
-        </details>
-
         <div class="accounts-table-panel"> 
           <div class="accounts-table-panel__head">
             <div>
@@ -1862,7 +1964,7 @@ $saBaseQuery = [
                         <td class="mono"><?php echo htmlspecialchars($lastLogin !== "" ? $lastLogin : "-"); ?></td>
                         <td>
                           <div class="account-action-group">
-                            <a class="btn btn--secondary btn--sm" href="super_admin.php?edit_user=<?php echo urlencode((string)$u["username"]); ?>#edit-account-section">Edit</a>
+                            <a class="btn btn--secondary btn--sm" href="super_admin.php?edit_user=<?php echo urlencode((string)$u["username"]); ?>#accounts-section">Edit</a>
                             <form method="POST" action="super_admin.php#accounts-section" class="inline-form" onsubmit="return confirm('Delete account <?php echo htmlspecialchars(addslashes((string)$u["username"])); ?>?');">
                               <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
                               <input type="hidden" name="action" value="delete_account" />
@@ -1884,6 +1986,61 @@ $saBaseQuery = [
       </div>
     </section>
 
+    <div id="accounts-create-modal" class="accounts-create-modal hidden" aria-hidden="true">
+      <div class="accounts-create-modal__panel" role="dialog" aria-modal="true" aria-labelledby="accounts-create-title">
+        <button type="button" class="accounts-create-modal__close" id="accounts-create-close" aria-label="Close create account panel">&times;</button>
+        <div class="accounts-create-modal__head">
+          <h3 id="accounts-create-title">Create Account</h3>
+          <p>Quickly add a new account with role, office, and optional barangay scope.</p>
+        </div>
+        <form class="accounts-create-form" method="POST" action="super_admin.php#accounts-section" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+          <input type="hidden" name="action" value="create_account" />
+          <div class="form-grid accounts-create-grid">
+            <div class="field">
+              <label for="new_username">Username</label>
+              <input id="new_username" name="new_username" type="text" required placeholder="Enter username" />
+            </div>
+            <div class="field">
+              <label for="new_password">Password</label>
+              <input id="new_password" name="new_password" type="password" required placeholder="Enter secure password" />
+            </div>
+            <div class="field accounts-create-role">
+              <label for="new_role">Role</label>
+              <select id="new_role" name="new_role">
+                <option value="admin">admin</option>
+                <option value="user">user</option>
+                <option value="barangay">barangay</option>
+                <option value="maif">MAIF</option>
+                <option value="super_admin">super_admin</option>
+              </select>
+            </div>
+            <div class="field" id="newOfficeScopeWrap">
+              <label for="new_office_scope">Office</label>
+              <select id="new_office_scope" name="new_office_scope">
+                <option value="municipality" selected>Municipality</option>
+                <option value="borabod">Borabod</option>
+                <option value="maif">MAIF</option>
+              </select>
+            </div>
+            <div class="field field--full hidden" id="newBarangayScopeWrap">
+              <label for="new_barangay_scope">Barangay Scope</label>
+              <select id="new_barangay_scope" name="new_barangay_scope">
+                <option value="" selected>Select barangay</option>
+                <?php foreach ($barangayChoices as $bChoice): ?>
+                  <option value="<?php echo htmlspecialchars($bChoice); ?>"><?php echo htmlspecialchars($bChoice); ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
+          <div class="actions accounts-create-actions">
+            <span class="accounts-create-actions__note">Use strong passwords for higher-privilege roles.</span>
+            <button class="btn" type="submit">Create Account</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <?php if ($editAccount): ?>
       <?php
         $editCreatedAt = format_utc_datetime_for_app((string)($editAccount["created_at"] ?? ""));
@@ -1904,18 +2061,18 @@ $saBaseQuery = [
           $editOfficeScopeCurrent = "municipality";
         }
       ?>
-      <section id="edit-account-section" class="card section">
-        <div class="card__header">
-          <h2 class="card__title">Edit Account Data</h2>
-          <p class="card__sub">Update username, role, and password for this account.</p>
-        </div>
-        <div class="card__body">
-          <p class="muted">Editing: <strong><?php echo htmlspecialchars($editUsernameCurrent); ?></strong> | Created: <?php echo htmlspecialchars($editCreatedAt !== "" ? $editCreatedAt : "-"); ?> <?php echo htmlspecialchars($tzLabel); ?></p>
-          <form method="POST" action="super_admin.php#edit-account-section" autocomplete="off">
+      <div id="accounts-edit-modal" class="accounts-edit-modal" aria-hidden="false">
+        <div class="accounts-edit-modal__panel" role="dialog" aria-modal="true" aria-labelledby="accounts-edit-title">
+          <a class="accounts-edit-modal__close" href="super_admin.php#accounts-section" aria-label="Close edit account panel">&times;</a>
+          <div class="accounts-edit-modal__head">
+            <h3 id="accounts-edit-title">Edit Account</h3>
+            <p>Update role access, office scope, and password for <strong><?php echo htmlspecialchars($editUsernameCurrent); ?></strong>.</p>
+          </div>
+          <form method="POST" action="super_admin.php#accounts-section" autocomplete="off">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
             <input type="hidden" name="action" value="update_account" />
             <input type="hidden" name="original_username" value="<?php echo htmlspecialchars($editUsernameCurrent); ?>" />
-            <div class="form-grid">
+            <div class="form-grid accounts-edit-grid">
               <div class="field">
                 <label for="edit_username">Username</label>
                 <input id="edit_username" name="edit_username" type="text" required value="<?php echo htmlspecialchars($editUsernameCurrent); ?>" />
@@ -1953,14 +2110,18 @@ $saBaseQuery = [
                 <label for="edit_password">New Password (optional)</label>
                 <input id="edit_password" name="edit_password" type="password" placeholder="Leave blank to keep current password" />
               </div>
+              <div class="field field--full">
+                <label>Created</label>
+                <input class="readonly" type="text" value="<?php echo htmlspecialchars($editCreatedAt !== "" ? $editCreatedAt : "-"); ?> <?php echo htmlspecialchars($tzLabel); ?>" readonly />
+              </div>
             </div>
-            <div class="actions">
+            <div class="actions accounts-edit-actions">
               <a class="btn btn--secondary" href="super_admin.php#accounts-section">Cancel</a>
               <button class="btn" type="submit">Save Account Changes</button>
             </div>
           </form>
         </div>
-      </section>
+      </div>
     <?php endif; ?>
 
     <section id="active-sessions-section" class="card section">
@@ -2020,7 +2181,7 @@ $saBaseQuery = [
       </div>
     </section>
 
-    <section class="card section">
+    <section id="assistance-type-section" class="card section">
       <div class="card__header">
         <h2 class="card__title">Statistics by Assistance Type</h2>
         <p class="card__sub">All assistance categories and counts.</p>
@@ -2321,6 +2482,67 @@ $saBaseQuery = [
   </script>
   <script>
     (function(){
+      var openCreateBtn = document.getElementById('open-create-account-modal');
+      var createModal = document.getElementById('accounts-create-modal');
+      var createCloseBtn = document.getElementById('accounts-create-close');
+      if (!openCreateBtn || !createModal || !createCloseBtn) return;
+
+      function openCreateModal() {
+        createModal.classList.remove('hidden');
+        createModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+      }
+
+      function closeCreateModal() {
+        createModal.classList.add('hidden');
+        createModal.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+      }
+
+      openCreateBtn.addEventListener('click', openCreateModal);
+      createCloseBtn.addEventListener('click', closeCreateModal);
+
+      createModal.addEventListener('click', function(e){
+        if (e.target === createModal) {
+          closeCreateModal();
+        }
+      });
+
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape') {
+          if (!createModal.classList.contains('hidden')) {
+            closeCreateModal();
+          }
+        }
+      });
+    })();
+  </script>
+  <script>
+    (function(){
+      var editModal = document.getElementById('accounts-edit-modal');
+      if (!editModal) return;
+
+      document.body.classList.add('modal-open');
+
+      function closeEditModal() {
+        window.location.href = 'super_admin.php#accounts-section';
+      }
+
+      editModal.addEventListener('click', function(e){
+        if (e.target === editModal) {
+          closeEditModal();
+        }
+      });
+
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape') {
+          closeEditModal();
+        }
+      });
+    })();
+  </script>
+  <script>
+    (function(){
       function bindBarangayScope(roleSelectId, wrapId, scopeSelectId) {
         var roleSelect = document.getElementById(roleSelectId);
         var wrap = document.getElementById(wrapId);
@@ -2375,7 +2597,7 @@ $saBaseQuery = [
 
         var topEl = center.querySelector('strong');
         var midEl = center.querySelector('.js-donut-mid');
-        var bottomEl = center.querySelector('.js-donut-sub');
+        var bottomEl = center.querySelector('.js-donut-sub') || center.querySelector('.sa-donut-sub');
         var items = Array.prototype.slice.call(group.querySelectorAll('.sa-legend-item[data-donut-top][data-donut-mid][data-donut-bottom][data-donut-pct]'));
         if (!topEl || !midEl || !bottomEl || !items.length) return;
 
@@ -2477,6 +2699,16 @@ $saBaseQuery = [
           setActive(-1);
         }
 
+        function setLockedIndex(index) {
+          if (lockedIndex === index) {
+            lockedIndex = -1;
+            resetToDefault();
+            return;
+          }
+          lockedIndex = index;
+          preview(index);
+        }
+
         function indexFromPointer(event) {
           var rect = donut.getBoundingClientRect();
           var cx = rect.left + (rect.width / 2);
@@ -2519,13 +2751,43 @@ $saBaseQuery = [
             resetToDefault();
             return;
           }
-          if (lockedIndex === idx) {
-            lockedIndex = -1;
-            resetToDefault();
-          } else {
-            lockedIndex = idx;
-            preview(idx);
+          setLockedIndex(idx);
+        });
+
+        items.forEach(function (item, index) {
+          if (!item.hasAttribute('tabindex')) {
+            item.setAttribute('tabindex', '0');
           }
+
+          item.addEventListener('mouseenter', function () {
+            if (lockedIndex !== -1) return;
+            preview(index);
+          });
+
+          item.addEventListener('mouseleave', function () {
+            if (lockedIndex === -1) resetToDefault();
+            else preview(lockedIndex);
+          });
+
+          item.addEventListener('focus', function () {
+            preview(index);
+          });
+
+          item.addEventListener('blur', function () {
+            if (lockedIndex === -1) resetToDefault();
+            else preview(lockedIndex);
+          });
+
+          item.addEventListener('click', function () {
+            setLockedIndex(index);
+          });
+
+          item.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setLockedIndex(index);
+            }
+          });
         });
 
         var resizeTimer = null;
@@ -2558,26 +2820,25 @@ $saBaseQuery = [
         });
       }
 
+      var periodMetaEl = document.getElementById('sa-report-period-meta');
+      var recordsEl = document.getElementById('sa-report-tracked-records');
+      var amountEl = document.getElementById('sa-report-tracked-amount');
+      var updatedEl = document.getElementById('sa-report-generated-at');
       var chart = document.getElementById('sa-report-line-chart');
+      var labelsWrap = document.getElementById('sa-report-line-labels');
+      var legendWrap = document.getElementById('sa-report-line-legend');
       var dataEl = document.getElementById('sa-report-line-data');
       var inspectorLabel = document.getElementById('sa-report-line-inspector-label');
       var inspectorRows = document.getElementById('sa-report-line-inspector-rows');
-      if (!chart || !dataEl || !inspectorLabel || !inspectorRows) return;
+      if (!chart || !labelsWrap || !legendWrap || !dataEl || !inspectorLabel || !inspectorRows) return;
 
-      var data = null;
-      try {
-        data = JSON.parse(dataEl.textContent || '{}');
-      } catch (err) {
-        return;
-      }
-
-      var labels = Array.isArray(data.labels) ? data.labels : [];
-      var series = Array.isArray(data.series) ? data.series : [];
-      if (!labels.length || !series.length) return;
-
-      var dots = Array.prototype.slice.call(chart.querySelectorAll('.sa-report-line-chart__dot[data-point-index]'));
-      var labelEls = Array.prototype.slice.call(document.querySelectorAll('.sa-report-line-labels span[data-point-index]'));
-      var activeIndex = labels.length - 1;
+      var labels = [];
+      var series = [];
+      var dots = [];
+      var labelEls = [];
+      var activeIndex = 0;
+      var liveRequestInFlight = false;
+      var lastLiveSignature = '';
 
       function escapeHtml(value) {
         return String(value == null ? '' : value)
@@ -2588,9 +2849,74 @@ $saBaseQuery = [
           .replace(/'/g, '&#039;');
       }
 
+      function clampIndex(index) {
+        if (!labels.length) return 0;
+        if (index < 0) return 0;
+        if (index >= labels.length) return labels.length - 1;
+        return index;
+      }
+
+      function getLiveFilterValue(name, fallback) {
+        if (filterForm) {
+          var formField = filterForm.querySelector('[name="' + name + '"]');
+          if (formField) {
+            return String(formField.value || '');
+          }
+        }
+        var urlParams = new URLSearchParams(window.location.search || '');
+        var fromUrl = urlParams.get(name);
+        if (fromUrl !== null) return String(fromUrl);
+        return String(fallback || '');
+      }
+
+      function bindDotEvents() {
+        dots.forEach(function (dot) {
+          if (dot.dataset.bound === '1') return;
+          dot.dataset.bound = '1';
+
+          dot.addEventListener('mouseenter', function () {
+            var pointIndex = Number(dot.getAttribute('data-point-index') || -1);
+            if (pointIndex >= 0) {
+              render(pointIndex);
+            }
+          });
+
+          dot.addEventListener('click', function () {
+            var pointIndex = Number(dot.getAttribute('data-point-index') || -1);
+            if (pointIndex >= 0) {
+              render(pointIndex);
+            }
+            chart.focus();
+          });
+        });
+      }
+
+      function syncInteractiveData(nextData, preferredIndex) {
+        labels = Array.isArray(nextData && nextData.labels) ? nextData.labels : [];
+        series = Array.isArray(nextData && nextData.series) ? nextData.series : [];
+
+        if (!labels.length || !series.length) {
+          inspectorLabel.textContent = '-';
+          inspectorRows.innerHTML = '';
+          return false;
+        }
+
+        if (typeof preferredIndex === 'number' && isFinite(preferredIndex)) {
+          activeIndex = clampIndex(preferredIndex);
+        } else {
+          activeIndex = clampIndex(labels.length - 1);
+        }
+
+        dots = Array.prototype.slice.call(chart.querySelectorAll('.sa-report-line-chart__dot[data-point-index]'));
+        labelEls = Array.prototype.slice.call(labelsWrap.querySelectorAll('span[data-point-index]'));
+        bindDotEvents();
+        render(activeIndex);
+        return true;
+      }
+
       function render(index) {
-        if (index < 0) index = 0;
-        if (index >= labels.length) index = labels.length - 1;
+        if (!labels.length || !series.length) return;
+        index = clampIndex(index);
         activeIndex = index;
 
         var rowsHtml = '';
@@ -2620,44 +2946,197 @@ $saBaseQuery = [
         });
       }
 
-      chart.addEventListener('keydown', function (event) {
-        if (event.key === 'ArrowLeft') {
-          event.preventDefault();
-          render(activeIndex - 1);
-        } else if (event.key === 'ArrowRight') {
-          event.preventDefault();
-          render(activeIndex + 1);
-        } else if (event.key === 'Home') {
-          event.preventDefault();
-          render(0);
-        } else if (event.key === 'End') {
-          event.preventDefault();
-          render(labels.length - 1);
-        }
-      });
+      function renderChartFromPayload(trend) {
+        var chartInfo = trend && trend.chart ? trend.chart : {};
+        var chartWidth = Number(chartInfo.width || 640);
+        var chartHeight = Number(chartInfo.height || 220);
+        if (!isFinite(chartWidth) || chartWidth <= 0) chartWidth = 640;
+        if (!isFinite(chartHeight) || chartHeight <= 0) chartHeight = 220;
 
-      chart.addEventListener('click', function () {
-        chart.focus();
-      });
+        var caption = trend && typeof trend.caption === 'string' ? trend.caption : 'Trend line';
+        chart.setAttribute('aria-label', caption + '. Use left and right arrow keys to inspect each point.');
 
-      dots.forEach(function (dot) {
-        dot.addEventListener('mouseenter', function () {
-          var pointIndex = Number(dot.getAttribute('data-point-index') || -1);
-          if (pointIndex >= 0) {
-            render(pointIndex);
+        var svgHtml = '<svg viewBox="0 0 ' + chartWidth + ' ' + chartHeight + '" role="img" aria-label="' + escapeHtml(caption) + '">' +
+          '<line x1="18" y1="' + (chartHeight - 20) + '" x2="' + (chartWidth - 18) + '" y2="' + (chartHeight - 20) + '" class="sa-report-line-chart__axis"></line>';
+
+        var payloadSeries = Array.isArray(trend && trend.series) ? trend.series : [];
+        payloadSeries.forEach(function (entry, seriesIndex) {
+          var color = String(entry && entry.color ? entry.color : '#2563eb');
+          var polyline = String(entry && entry.polyline ? entry.polyline : '');
+          svgHtml += '<polyline points="' + escapeHtml(polyline) + '" class="sa-report-line-chart__line" style="--line-color: ' + escapeHtml(color) + ';"></polyline>';
+
+          var points = Array.isArray(entry && entry.points) ? entry.points : [];
+          points.forEach(function (point, pointIndex) {
+            var x = Number(point && point.x);
+            var y = Number(point && point.y);
+            svgHtml += '<circle cx="' + escapeHtml(isFinite(x) ? x.toFixed(2) : '0.00') + '" cy="' + escapeHtml(isFinite(y) ? y.toFixed(2) : '0.00') + '" r="4" class="sa-report-line-chart__dot" data-series-index="' + seriesIndex + '" data-point-index="' + pointIndex + '" style="--dot-color: ' + escapeHtml(color) + ';"></circle>';
+          });
+        });
+
+        svgHtml += '</svg>';
+        chart.innerHTML = svgHtml;
+      }
+
+      function renderTrendLabelsFromPayload(trend) {
+        var trendLabels = Array.isArray(trend && trend.labels) ? trend.labels : [];
+        var visibleIndexMap = {};
+        var visibleIndexes = Array.isArray(trend && trend.point_label_indexes) ? trend.point_label_indexes : [];
+        visibleIndexes.forEach(function (idx) {
+          var intIdx = Number(idx);
+          if (isFinite(intIdx) && intIdx >= 0) {
+            visibleIndexMap[intIdx] = true;
           }
         });
 
-        dot.addEventListener('click', function () {
-          var pointIndex = Number(dot.getAttribute('data-point-index') || -1);
-          if (pointIndex >= 0) {
-            render(pointIndex);
+        labelsWrap.style.setProperty('--label-count', String(Math.max(1, trendLabels.length)));
+        labelsWrap.innerHTML = trendLabels.map(function (label, idx) {
+          var visible = !!visibleIndexMap[idx];
+          return '<span data-point-index="' + idx + '" class="' + (visible ? 'is-visible' : '') + '">' +
+            (visible ? escapeHtml(label) : '&nbsp;') +
+          '</span>';
+        }).join('');
+      }
+
+      function renderTrendLegendFromPayload(trend) {
+        var payloadSeries = Array.isArray(trend && trend.series) ? trend.series : [];
+        var legendHtml = '<span class="sa-report-line-legend__title">Office Lines</span>';
+        payloadSeries.forEach(function (entry) {
+          legendHtml += '<div class="sa-report-line-legend__item">' +
+            '<span class="sa-report-line-legend__swatch" style="--legend-line-color: ' + escapeHtml(entry && entry.color ? entry.color : '#2563eb') + ';"></span>' +
+            '<span class="sa-report-line-legend__name">' + escapeHtml(entry && entry.label ? entry.label : '') + '</span>' +
+          '</div>';
+        });
+        legendWrap.innerHTML = legendHtml;
+      }
+
+      function applyLivePayload(payload) {
+        if (!payload || payload.ok !== true) return;
+
+        if (periodMetaEl && typeof payload.period_meta === 'string') {
+          periodMetaEl.textContent = payload.period_meta;
+        }
+        if (updatedEl && typeof payload.generated_at === 'string') {
+          updatedEl.textContent = payload.generated_at;
+        }
+        if (recordsEl) {
+          recordsEl.textContent = payload.tracked_records_display || String(payload.tracked_records || 0);
+        }
+        if (amountEl) {
+          amountEl.textContent = payload.tracked_amount_display || 'PHP 0.00';
+        }
+
+        var trend = payload.trend || {};
+        renderChartFromPayload(trend);
+        renderTrendLabelsFromPayload(trend);
+        renderTrendLegendFromPayload(trend);
+
+        var interactive = trend.interactive || {
+          labels: Array.isArray(trend.labels) ? trend.labels : [],
+          series: Array.isArray(trend.series) ? trend.series.map(function (entry) {
+            return {
+              label: String(entry && entry.label ? entry.label : ''),
+              color: String(entry && entry.color ? entry.color : '#2563eb'),
+              values: Array.isArray(entry && entry.values) ? entry.values : [],
+            };
+          }) : [],
+        };
+        dataEl.textContent = JSON.stringify(interactive);
+        syncInteractiveData(interactive, activeIndex);
+      }
+
+      function buildLiveSignature(payload) {
+        return JSON.stringify({
+          records: Number(payload && payload.tracked_records ? payload.tracked_records : 0),
+          amount: Number(payload && payload.tracked_amount ? payload.tracked_amount : 0),
+          trend: payload && payload.trend && payload.trend.interactive ? payload.trend.interactive : {},
+        });
+      }
+
+      async function refreshReportTracking() {
+        if (liveRequestInFlight || document.hidden) return;
+        liveRequestInFlight = true;
+
+        try {
+          var params = new URLSearchParams();
+          params.set('report_tracking_live', '1');
+          params.set('report_period', getLiveFilterValue('report_period', 'all'));
+          params.set('report_year', getLiveFilterValue('report_year', ''));
+          params.set('report_office', getLiveFilterValue('report_office', ''));
+          params.set('report_barangay', getLiveFilterValue('report_barangay', ''));
+          params.set('_ts', String(Date.now()));
+
+          var response = await fetch('super_admin.php?' + params.toString(), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            cache: 'no-store',
+            credentials: 'same-origin',
+          });
+          if (!response.ok) {
+            throw new Error('Report tracking refresh failed with status ' + response.status);
           }
+
+          var payload = await response.json();
+          if (!payload || payload.ok !== true) return;
+
+          var nextSignature = buildLiveSignature(payload);
+          if (nextSignature === lastLiveSignature) return;
+
+          lastLiveSignature = nextSignature;
+          applyLivePayload(payload);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          liveRequestInFlight = false;
+        }
+      }
+
+      if (chart.dataset.keyboardBound !== '1') {
+        chart.dataset.keyboardBound = '1';
+        chart.addEventListener('keydown', function (event) {
+          if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            render(activeIndex - 1);
+          } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            render(activeIndex + 1);
+          } else if (event.key === 'Home') {
+            event.preventDefault();
+            render(0);
+          } else if (event.key === 'End') {
+            event.preventDefault();
+            render(labels.length - 1);
+          }
+        });
+        chart.addEventListener('click', function () {
           chart.focus();
         });
+      }
+
+      var initialData = null;
+      try {
+        initialData = JSON.parse(dataEl.textContent || '{}');
+      } catch (err) {
+        initialData = null;
+      }
+      if (!syncInteractiveData(initialData, null)) {
+        return;
+      }
+
+      lastLiveSignature = JSON.stringify({
+        records: Number((recordsEl && recordsEl.textContent ? recordsEl.textContent.replace(/,/g, '') : '0') || 0),
+        amount: Number((amountEl && amountEl.textContent ? amountEl.textContent.replace(/[^\d.-]/g, '') : '0') || 0),
+        trend: initialData,
       });
 
-      render(activeIndex);
+      setInterval(function () {
+        refreshReportTracking();
+      }, 4000);
+
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) {
+          refreshReportTracking();
+        }
+      });
     })();
   </script>
 </body>

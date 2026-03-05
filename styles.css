@@ -6,9 +6,9 @@
   --muted:#64748b;
   --border:#e5e7eb;
 
-  --primary:#fdb61d;
-  --primary-hover:#fdb61d;
-  --primary-rgb: 37, 99, 235;
+  --primary:#FFBF00;
+  --primary-hover:#FFD24A;
+  --primary-rgb: 255, 191, 0;
 
   --r:16px;
   --shadow: 0 16px 40px rgba(2, 6, 23, .08);
@@ -352,12 +352,19 @@ input:focus, select:focus, textarea:focus{
 .btn--secondary{background:#e2e8f0; color:var(--text); box-shadow:none;}
 .btn--secondary:hover{background:#cbd5e1}
 .btn--danger{
-  background:#fee2e2;
-  color:#991b1b;
-  border:1px solid #fecaca;
-  box-shadow:none;
+  background: linear-gradient(180deg, #ef4444, #dc2626);
+  color:#ffffff;
+  border:1px solid #b91c1c;
+  box-shadow: 0 10px 24px rgba(220, 38, 38, .30);
 }
-.btn--danger:hover{background:#fecaca}
+.btn--danger:hover{
+  background: linear-gradient(180deg, #f87171, #dc2626);
+  box-shadow: 0 12px 26px rgba(220, 38, 38, .34);
+}
+.btn--danger:focus-visible{
+  outline:none;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .26), 0 10px 24px rgba(220, 38, 38, .30);
+}
 
 .btn--sm{padding: 10px 12px; font-size: 13px; border-radius: 12px; box-shadow:none;}
 
@@ -1075,6 +1082,88 @@ body.modal-open{
   backdrop-filter: blur(8px);
 }
 
+.record-edit-overlay{
+  position:fixed;
+  inset:0;
+  z-index:125;
+  padding:16px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:
+    radial-gradient(circle at top left, rgba(253, 182, 29, .16), transparent 36%),
+    rgba(15, 23, 42, .72);
+  backdrop-filter: blur(6px);
+}
+
+.record-edit-panel{
+  width:min(1080px, 100%);
+  height:min(90vh, 860px);
+  border-radius:20px;
+  border:1px solid rgba(251, 191, 36, .35);
+  background: linear-gradient(180deg, #ffffff, #fffaf1);
+  box-shadow: 0 28px 70px rgba(2, 6, 23, .35);
+  overflow:hidden;
+  display:grid;
+  grid-template-rows:auto minmax(0, 1fr);
+}
+
+.record-edit-panel__head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 14px;
+  border-bottom:1px solid rgba(251, 191, 36, .3);
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(253,182,29,.12), transparent 58%),
+    linear-gradient(180deg, #ffffff, #fffaf1);
+}
+
+.record-edit-panel__eyebrow{
+  margin:0 0 6px;
+  color:#b45309;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.record-edit-panel__head h3{
+  margin:0;
+  font-size:22px;
+  letter-spacing:-.02em;
+  color:#0f172a;
+}
+
+.record-edit-close{
+  appearance:none;
+  border:1px solid rgba(148, 163, 184, .3);
+  background:#fff;
+  width:38px;
+  height:38px;
+  border-radius:999px;
+  font-size:26px;
+  line-height:1;
+  color:#475569;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.record-edit-close:hover{
+  color:#0f172a;
+  border-color:#cbd5e1;
+}
+
+.record-edit-frame{
+  width:100%;
+  height:100%;
+  border:0;
+  background:#fff;
+}
+
 .record-view-panel{
   position:relative;
   width:min(760px, 100%);
@@ -1217,7 +1306,7 @@ body.modal-open{
 
 .record-view-hero{
   display:grid;
-  grid-template-columns:minmax(0, 1.5fr) minmax(220px, .8fr);
+  grid-template-columns:minmax(0, 1.75fr) minmax(210px, .7fr);
   gap:14px;
   margin-bottom:16px;
 }
@@ -1249,7 +1338,23 @@ body.modal-open{
   font-size:28px;
   font-weight:900;
   line-height:1.15;
-  word-break:break-word;
+  word-break:normal;
+  overflow-wrap:normal;
+  hyphens:none;
+  max-width:100%;
+}
+
+.record-view-hero__identity strong{
+  font-size:clamp(22px, 2.9vw, 30px);
+  text-wrap:balance;
+  line-height:1.08;
+  white-space:normal;
+}
+
+.record-view-hero__amount strong{
+  font-size:clamp(20px, 2.8vw, 30px);
+  white-space:nowrap;
+  letter-spacing:-.01em;
 }
 
 .record-view-hero__meta{
@@ -1528,6 +1633,23 @@ body.modal-open{
 
   .record-view-overlay{
     padding:12px;
+  }
+
+  .record-edit-overlay{
+    padding:10px;
+  }
+
+  .record-edit-panel{
+    height:min(92vh, 920px);
+    border-radius:16px;
+  }
+
+  .record-edit-panel__head{
+    padding:10px 12px;
+  }
+
+  .record-edit-panel__head h3{
+    font-size:19px;
   }
 
   .record-view-panel{
@@ -1821,6 +1943,14 @@ body.superadmin-page .accounts-hub__badges{
   flex-wrap:wrap;
 }
 
+body.superadmin-page .accounts-hub__tools{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
 body.superadmin-page .accounts-hub__badge{
   display:inline-flex;
   align-items:center;
@@ -1845,6 +1975,105 @@ body.superadmin-page .accounts-hub__badge--active{
   border-color:#86efac;
   background:#ecfdf5;
   color:#166534;
+}
+
+body.superadmin-page .accounts-create-modal,
+body.superadmin-page .accounts-edit-modal{
+  position:fixed;
+  inset:0;
+  z-index:180;
+  padding:20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(15, 23, 42, .56);
+  backdrop-filter: blur(4px);
+}
+
+body.superadmin-page .accounts-create-modal__panel,
+body.superadmin-page .accounts-edit-modal__panel{
+  position:relative;
+  width:min(760px, 100%);
+  max-height:92vh;
+  overflow:auto;
+  border:1px solid #d8e4f3;
+  border-radius:16px;
+  background:#ffffff;
+  box-shadow: 0 20px 50px rgba(2, 6, 23, .28);
+  padding:18px;
+}
+
+body.superadmin-page .accounts-create-modal__close,
+body.superadmin-page .accounts-edit-modal__close{
+  position:absolute;
+  top:10px;
+  right:12px;
+  width:34px;
+  height:34px;
+  padding:0;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  border:1px solid #cfddef;
+  background:#ffffff;
+  color:#334155;
+  font-size:26px;
+  line-height:1;
+  text-decoration:none;
+  cursor:pointer;
+}
+
+body.superadmin-page .accounts-create-modal__close:hover,
+body.superadmin-page .accounts-edit-modal__close:hover{
+  border-color:#93c5fd;
+  background:#eff6ff;
+}
+
+body.superadmin-page .accounts-create-modal__head,
+body.superadmin-page .accounts-edit-modal__head{
+  margin-bottom:10px;
+  padding-right:40px;
+}
+
+body.superadmin-page .accounts-create-modal__head h3,
+body.superadmin-page .accounts-edit-modal__head h3{
+  margin:0;
+  font-size:18px;
+  letter-spacing:-.2px;
+}
+
+body.superadmin-page .accounts-create-modal__head p,
+body.superadmin-page .accounts-edit-modal__head p{
+  margin:4px 0 0;
+  color:#5c718d;
+  font-size:13px;
+}
+
+body.superadmin-page .accounts-create-modal .accounts-create-form,
+body.superadmin-page .accounts-edit-modal form{
+  margin-top:10px;
+}
+
+body.superadmin-page .accounts-create-modal .accounts-create-grid{
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body.superadmin-page .accounts-edit-grid{
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:12px;
+}
+
+body.superadmin-page .accounts-create-modal .accounts-create-role{
+  max-width:none;
+}
+
+body.superadmin-page .accounts-create-modal .accounts-create-actions{
+  justify-content:flex-end;
+}
+
+body.superadmin-page .accounts-edit-actions{
+  justify-content:flex-end;
 }
 
 body.superadmin-page .accounts-create-disclosure{
@@ -2057,6 +2286,11 @@ body.superadmin-page .accounts-table-wrap tbody td{
     align-items:flex-start;
   }
 
+  body.superadmin-page .accounts-hub__tools{
+    width:100%;
+    justify-content:flex-start;
+  }
+
   body.superadmin-page .accounts-hub__badges{
     width:100%;
   }
@@ -2092,6 +2326,21 @@ body.superadmin-page .accounts-table-wrap tbody td{
     flex-direction:column;
     align-items:flex-start;
   }
+
+  body.superadmin-page .accounts-create-modal,
+  body.superadmin-page .accounts-edit-modal{
+    padding:12px;
+  }
+
+  body.superadmin-page .accounts-create-modal .accounts-create-grid,
+  body.superadmin-page .accounts-edit-grid{
+    grid-template-columns:1fr;
+  }
+
+  body.superadmin-page .accounts-create-modal .accounts-create-actions,
+  body.superadmin-page .accounts-edit-actions{
+    justify-content:flex-start;
+  }
 }
 
 @keyframes accountsHubIn{
@@ -2109,6 +2358,53 @@ body.superadmin-page .accounts-table-wrap tbody td{
 .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
 .strong{font-weight: 800;}
 .note{max-width: 360px; white-space: nowrap; overflow:hidden; text-overflow: ellipsis;}
+
+/* Records table spacing: keep Notes/Action compact and readable. */
+#records-section .table-scroll table th:nth-last-child(2),
+#records-section .table-scroll table td:nth-last-child(2){
+  min-width: 220px;
+  max-width: 220px;
+}
+
+#records-section .table-scroll table td:nth-last-child(2){
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
+#records-section .table-scroll table th:last-child,
+#records-section .table-scroll table td:last-child{
+  width: 130px;
+  min-width: 130px;
+  max-width: 130px;
+  white-space: nowrap;
+}
+
+#records-section .record-action-group{
+  flex-wrap: nowrap;
+}
+
+#all-assistance-section .table-scroll table th:nth-last-child(2),
+#all-assistance-section .table-scroll table td:nth-last-child(2){
+  min-width: 220px;
+  max-width: 220px;
+}
+
+#all-assistance-section .table-scroll table td:nth-last-child(2){
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
+#all-assistance-section .table-scroll table th:last-child,
+#all-assistance-section .table-scroll table td:last-child{
+  width: 112px;
+  min-width: 112px;
+  max-width: 112px;
+  white-space: nowrap;
+}
 
 /* Footer */
 .footer{display:flex; justify-content:center; padding: 16px 6px 0;}
@@ -2725,10 +3021,7 @@ body.superadmin-page .sa-legend-meta{
   z-index:3000;
   display:grid;
   place-items:center;
-  background:
-    radial-gradient(900px 520px at 10% -10%, rgba(var(--primary-rgb), .22), transparent 60%),
-    radial-gradient(900px 520px at 100% 0%, rgba(20, 184, 166, .16), transparent 58%),
-    linear-gradient(180deg, #f8fbff 0%, #eef3fb 58%, #e6edf8 100%);
+  background: linear-gradient(180deg, #f8fbff 0%, #eef3fb 58%, #e6edf8 100%);
   opacity:1;
   visibility:visible;
   transition: opacity .45s ease, visibility .45s ease;
@@ -2890,6 +3183,28 @@ body.superadmin-page .sa-summary-panel__meta{
   color:#51637f;
   font-size:12px;
   font-weight:700;
+}
+
+body.superadmin-page .sa-summary-panel__divider{
+  margin-top:10px;
+  border-top:1px solid #dbe3ef;
+}
+
+body.superadmin-page .sa-summary-panel__subhead{
+  margin-top:10px;
+  font-size:11px;
+  font-weight:800;
+  color:#64748b;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+
+body.superadmin-page .sa-summary-panel__subvalue{
+  margin-top:6px;
+  font-size:18px;
+  line-height:1.2;
+  font-weight:900;
+  color:#0f172a;
 }
 
 body.superadmin-page .sa-summary-panel--accent{
@@ -3964,6 +4279,55 @@ body.superadmin-page .sa-summary-panel{
   min-height:0;
 }
 
+/* Final layout override: 6 statistic cards in 2 columns x 3 rows */
+body.superadmin-page .sa-stats-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:12px;
+  align-items:stretch;
+}
+
+body.superadmin-page .sa-stats-grid > .sa-distribution-card,
+body.superadmin-page .sa-stats-grid > .sa-summary-panel{
+  height:100%;
+}
+
+body.superadmin-page .sa-stats-layout{
+  display:grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.95fr);
+  gap:12px;
+  align-items:start;
+}
+
+/* Reorder cards to match requested layout:
+   Row 1: Office | Top Barangay
+   Row 2: Barangay | Total Amount
+   Row 3: Assistance Type | MAIF Total Amount
+*/
+body.superadmin-page .sa-stats-grid > :nth-child(1){ order:3; } /* Barangay */
+body.superadmin-page .sa-stats-grid > :nth-child(2){ order:1; } /* Office */
+body.superadmin-page .sa-stats-grid > :nth-child(3){ order:5; } /* Assistance */
+body.superadmin-page .sa-stats-grid > :nth-child(4){ order:2; } /* Top Barangay */
+body.superadmin-page .sa-stats-grid > :nth-child(5){ order:4; } /* Total Amount */
+body.superadmin-page .sa-stats-grid > :nth-child(6){ order:6; } /* MAIF Total */
+
+/* Hide duplicated cards that also exist in right column */
+body.superadmin-page .sa-stats-right > .sa-summary-panel--accent,
+body.superadmin-page .sa-stats-right > .sa-summary-panel--amount,
+body.superadmin-page .sa-stats-right > .sa-distribution-card{
+  display:none;
+}
+
+@media (max-width: 920px){
+  body.superadmin-page .sa-stats-layout{
+    grid-template-columns: 1fr;
+  }
+
+  body.superadmin-page .sa-stats-grid{
+    grid-template-columns: 1fr;
+  }
+}
+
 body.superadmin-page .sa-summary-panel--tracking{
   border-color:#d8e4f3;
   background:
@@ -3972,15 +4336,14 @@ body.superadmin-page .sa-summary-panel--tracking{
 }
 
 body.superadmin-page .sa-report-filter{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  flex-wrap:wrap;
+  display:grid;
+  width:100%;
 }
 
 body.superadmin-page .sa-report-filter--panel{
   margin-top:12px;
-  gap:8px;
+  gap:12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 body.superadmin-page .sa-report-filter__label{
@@ -3991,8 +4354,15 @@ body.superadmin-page .sa-report-filter__label{
   letter-spacing:.04em;
 }
 
+body.superadmin-page .sa-report-filter__field{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
 body.superadmin-page .sa-report-filter select{
   min-width:118px;
+  width:100%;
   height:36px;
   padding:7px 10px;
   font-size:12px;
@@ -4119,6 +4489,14 @@ body.superadmin-page .sa-report-line-chart__dot{
 
 body.superadmin-page .sa-report-line-chart__dot.is-active{
   transform:scale(1.45);
+  stroke-width:3;
+  filter:brightness(1.05) saturate(1.15);
+}
+
+body.superadmin-page .sa-report-line-chart__dot:hover{
+  fill:#f59e0b;
+  stroke:#1f2937;
+  transform:scale(1.55);
   stroke-width:3;
 }
 
@@ -4274,4 +4652,297 @@ body.superadmin-page .sa-report-line-legend__name{
     min-width:0;
     width:100%;
   }
+}
+
+/* Final readability and donut interaction fixes (super admin) */
+body.superadmin-page .sa-distribution-card__head h3,
+body.superadmin-page .sa-summary-panel__head h3{
+  font-size:18px;
+  line-height:1.2;
+}
+
+body.superadmin-page .sa-summary-panel__value,
+body.superadmin-page .sa-summary-panel__subvalue{
+  word-break:normal;
+  overflow-wrap:break-word;
+}
+
+body.superadmin-page .sa-donut{
+  cursor:pointer;
+}
+
+body.superadmin-page .sa-donut:hover{
+  filter:saturate(1.07);
+}
+
+body.superadmin-page .js-donut-center strong,
+body.superadmin-page .js-donut-center .js-donut-mid,
+body.superadmin-page .js-donut-center .js-donut-sub{
+  word-break:normal;
+  overflow-wrap:normal;
+  hyphens:none;
+}
+
+body.superadmin-page .sa-legend-list{
+  gap:8px;
+  padding-right:4px;
+}
+
+body.superadmin-page .sa-legend-item{
+  grid-template-columns: 10px minmax(0, 1fr);
+  grid-template-areas:
+    "swatch name"
+    "swatch meta";
+  align-items:start;
+  row-gap:4px;
+  min-height:44px;
+  cursor:pointer;
+  transition:border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+body.superadmin-page .sa-legend-item:hover{
+  border-color:#9cbcff;
+  background:#f4f8ff;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .14);
+}
+
+body.superadmin-page .sa-legend-item:focus-visible{
+  outline:none;
+  border-color:#2563eb;
+  box-shadow:0 0 0 3px rgba(37,99,235,.18);
+}
+
+body.superadmin-page .sa-legend-item.is-active{
+  border-color:#96beff;
+  background:#eef5ff;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .2);
+}
+
+body.superadmin-page .sa-legend-swatch{
+  grid-area:swatch;
+  margin-top:5px;
+}
+
+body.superadmin-page .sa-legend-name{
+  grid-area:name;
+  overflow:visible;
+  text-overflow:clip;
+  white-space:normal;
+  line-height:1.25;
+  font-size:13px;
+  font-weight:800;
+}
+
+body.superadmin-page .sa-legend-meta{
+  grid-area:meta;
+  justify-self:start;
+  white-space:normal;
+  line-height:1.25;
+  font-size:12px;
+}
+
+/* Final width preference: left panel wider than right panel */
+body.superadmin-page .sa-stats-layout{
+  grid-template-columns: minmax(0, 1.14fr) minmax(360px, 0.86fr);
+}
+
+/* Header-only gradients for super admin panels (match Account Center style) */
+body.superadmin-page{
+  --sa-head-gradient:
+    radial-gradient(120% 140% at 0% 0%, rgba(253,182,29,.12), transparent 58%),
+    radial-gradient(110% 150% at 100% 0%, rgba(245,158,11,.10), transparent 62%),
+    linear-gradient(180deg, #ffffff, #fffaf2);
+  --sa-panel-border:#d8e4f3;
+}
+
+body.superadmin-page .card,
+body.superadmin-page .sa-distribution-card,
+body.superadmin-page .sa-summary-panel,
+body.superadmin-page .accounts-table-wrap,
+body.superadmin-page .accounts-create-modal__panel,
+body.superadmin-page .accounts-edit-modal__panel,
+body.superadmin-page .sa-report-line-card,
+body.superadmin-page .sa-report-line-inspector,
+body.superadmin-page .sa-report-stat,
+body.superadmin-page .sa-account-metric{
+  background:#ffffff;
+  border-color: var(--sa-panel-border);
+}
+
+body.superadmin-page .card__header,
+body.superadmin-page .sa-distribution-card__head,
+body.superadmin-page .sa-summary-panel__head,
+body.superadmin-page .accounts-table-panel__head,
+body.superadmin-page .accounts-create-modal__head,
+body.superadmin-page .accounts-edit-modal__head,
+body.superadmin-page .sa-report-line-card__head{
+  background: var(--sa-head-gradient);
+  border-radius:12px;
+}
+
+/* Super Admin buttons: match dashboard tone (no blue look) */
+body.superadmin-page .btn:not(.btn--secondary):not(.btn--danger){
+  background: linear-gradient(180deg, #ffec9f 0%, #ffd64e 52%, #ffbf00 100%);
+  color:#1f2937;
+  border:1px solid #d9a300;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 4px 10px rgba(255, 191, 0, .16);
+}
+
+body.superadmin-page .btn:not(.btn--secondary):not(.btn--danger):hover{
+  background: linear-gradient(180deg, #fff2b8 0%, #ffdd6f 54%, #ffc61a 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.78), 0 5px 12px rgba(255, 191, 0, .18);
+}
+
+body.superadmin-page .btn:not(.btn--secondary):not(.btn--danger):focus-visible{
+  outline:none;
+  box-shadow: 0 0 0 3px rgba(255, 191, 0, .18), inset 0 1px 0 rgba(255,255,255,.72), 0 4px 10px rgba(255, 191, 0, .16);
+}
+
+/* Dashboard-only modern button refresh */
+body:not(.superadmin-page) .btn:not(.btn--danger){
+  border-radius:14px;
+  border:1px solid #d9a300;
+  background: linear-gradient(180deg, #ffec9f 0%, #ffd64e 52%, #ffbf00 100%);
+  color:#1f2937;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.72), 0 5px 12px rgba(255, 191, 0, .16);
+  transition: transform .12s ease, box-shadow .18s ease, filter .18s ease, background .18s ease;
+}
+
+body:not(.superadmin-page) .btn:not(.btn--danger):hover{
+  background: linear-gradient(180deg, #fff2b8 0%, #ffdd6f 54%, #ffc61a 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.78), 0 6px 14px rgba(255, 191, 0, .18);
+  filter:saturate(1.01);
+  transform:translateY(-1px);
+}
+
+body:not(.superadmin-page) .btn:not(.btn--danger):active{
+  transform:translateY(0);
+}
+
+body:not(.superadmin-page) .btn:not(.btn--danger):focus-visible{
+  outline:none;
+  box-shadow: 0 0 0 3px rgba(255, 191, 0, .18), inset 0 1px 0 rgba(255,255,255,.72), 0 5px 12px rgba(255, 191, 0, .16);
+}
+
+body:not(.superadmin-page) .btn--secondary{
+  border-color:#d3dce7;
+  background: linear-gradient(180deg, #ffffff, #edf2f8);
+  color:#0f172a;
+  box-shadow:0 8px 20px rgba(15, 23, 42, .08);
+}
+
+body:not(.superadmin-page) .btn--secondary:hover{
+  background: linear-gradient(180deg, #ffffff, #e6edf6);
+  box-shadow:0 10px 22px rgba(15, 23, 42, .10);
+}
+
+/* Super Admin: keep gradients only on top headers of major sections. */
+body.superadmin-page .sa-global-stats > .card__header,
+body.superadmin-page #accounts-section > .card__header,
+body.superadmin-page #active-sessions-section > .card__header,
+body.superadmin-page #assistance-type-section > .card__header,
+body.superadmin-page #all-assistance-section > .card__header{
+  background: var(--sa-head-gradient) !important;
+}
+
+/* Remove inner gradients inside those sections and account modals. */
+body.superadmin-page .sa-global-stats .sa-summary-panel,
+body.superadmin-page .sa-global-stats .sa-distribution-card,
+body.superadmin-page .sa-global-stats .sa-report-line-card,
+body.superadmin-page .sa-global-stats .sa-report-line-inspector,
+body.superadmin-page .sa-global-stats .sa-report-stat,
+body.superadmin-page #accounts-section .accounts-table-wrap,
+body.superadmin-page #accounts-section .accounts-create-modal__panel,
+body.superadmin-page #accounts-section .accounts-edit-modal__panel,
+body.superadmin-page #active-sessions-section .table-wrap,
+body.superadmin-page #assistance-type-section .table-wrap,
+body.superadmin-page #all-assistance-section .table-wrap,
+body.superadmin-page #all-assistance-section .table-scroll{
+  background:#ffffff !important;
+}
+
+body.superadmin-page .sa-global-stats .sa-summary-panel__head,
+body.superadmin-page .sa-global-stats .sa-distribution-card__head,
+body.superadmin-page .sa-global-stats .sa-report-line-card__head,
+body.superadmin-page #accounts-section .accounts-table-panel__head,
+body.superadmin-page #accounts-section .accounts-create-modal__head,
+body.superadmin-page #accounts-section .accounts-edit-modal__head{
+  background:#ffffff !important;
+}
+
+/* Re-enable gradients for requested Global Statistics highlight panels. */
+body.superadmin-page .sa-global-stats .sa-summary-panel--accent{
+  border-color:#f7d08a !important;
+  background:
+    radial-gradient(115% 170% at 0% 0%, rgba(253,182,29,.16), transparent 62%),
+    linear-gradient(180deg, #ffffff 0%, #fff8eb 100%) !important;
+}
+
+body.superadmin-page .sa-global-stats .sa-summary-panel--accent .sa-summary-panel__divider{
+  border-top:1px solid #f6ddb0;
+}
+
+body.superadmin-page .sa-global-stats .sa-summary-panel--tracking{
+  border-color:#f7d08a !important;
+  background:
+    radial-gradient(120% 180% at 0% 0%, rgba(253,182,29,.12), transparent 58%),
+    linear-gradient(180deg, #ffffff 0%, #fff9f0 100%) !important;
+}
+
+body.superadmin-page .sa-global-stats .sa-summary-panel--tracking .sa-summary-panel__head{
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.98), rgba(255,248,233,.95)) !important;
+}
+
+/* Record Details: warm account-center palette (remove blue accents) */
+.record-view-overlay{
+  background:
+    radial-gradient(circle at top left, rgba(253, 182, 29, .16), transparent 36%),
+    rgba(15, 23, 42, .66);
+}
+
+.record-view-panel{
+  border:1px solid rgba(251, 191, 36, .32);
+  background:
+    radial-gradient(circle at top right, rgba(253, 182, 29, .14), transparent 34%),
+    radial-gradient(circle at bottom left, rgba(245, 158, 11, .08), transparent 38%),
+    linear-gradient(180deg, #ffffff 0%, #fffaf1 100%);
+}
+
+.record-view-panel__glow{
+  background:radial-gradient(circle, rgba(253, 182, 29, .2), transparent 70%);
+}
+
+.record-view-panel__eyebrow{
+  color:#b45309;
+}
+
+.record-view-panel__badge{
+  background:#fff3cf;
+  color:#92400e;
+}
+
+.record-view-panel__caption{
+  color:#7c5f2a;
+}
+
+.record-view-hero__identity,
+.record-view-hero__amount{
+  border:1px solid rgba(251, 191, 36, .45);
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(255, 248, 232, .92));
+}
+
+.record-view-hero__meta span{
+  background:#fff3cf;
+  color:#92400e;
+}
+
+.record-view-section,
+.record-view-side__card{
+  border:1px solid rgba(251, 191, 36, .3);
+  background:rgba(255,255,255,.78);
+}
+
+.record-view-notes-panel{
+  border:1px dashed rgba(245, 158, 11, .45);
 }

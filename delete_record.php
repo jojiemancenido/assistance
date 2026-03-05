@@ -17,7 +17,7 @@ function normalize_return_to(string $raw): string {
   }
 
   $path = trim((string)($parts["path"] ?? ""));
-  if ($path !== "super_admin.php") {
+  if (!in_array($path, ["index.php", "records.php", "super_admin.php"], true)) {
     return $fallback;
   }
 
@@ -38,9 +38,20 @@ function with_status_message(string $url, string $status, string $message): stri
   return $url . $joiner . "status=" . urlencode($status) . "&msg=" . urlencode($message) . $fragment;
 }
 
+function edit_error_redirect(int $recordId, string $returnTo, string $message, bool $isPopup): string {
+  $url = "edit.php?record_id=" . urlencode((string)$recordId) .
+    "&return_to=" . urlencode($returnTo) .
+    "&status=error&msg=" . urlencode($message);
+  if ($isPopup) {
+    $url .= "&popup=1";
+  }
+  return $url;
+}
+
 $recordId = (int)($_POST["record_id"] ?? 0);
 $csrfToken = $_POST["csrf_token"] ?? "";
 $returnTo = normalize_return_to((string)($_POST["return_to"] ?? ""));
+$isPopup = (isset($_POST["popup"]) && (string)$_POST["popup"] === "1");
 
 if ($recordId <= 0) {
   header("Location: " . with_status_message($returnTo, "error", "Invalid record selected for deletion."));
@@ -48,13 +59,13 @@ if ($recordId <= 0) {
 }
 
 if (!verify_csrf_token($csrfToken)) {
-  header("Location: edit.php?record_id=" . urlencode((string)$recordId) . "&return_to=" . urlencode($returnTo) . "&status=error&msg=" . urlencode("Invalid request token. Please refresh and try again."));
+  header("Location: " . edit_error_redirect($recordId, $returnTo, "Invalid request token. Please refresh and try again.", $isPopup));
   exit;
 }
 
 $nameStmt = $conn->prepare("SELECT name FROM records WHERE record_id = ? LIMIT 1");
 if (!$nameStmt) {
-  header("Location: edit.php?record_id=" . urlencode((string)$recordId) . "&return_to=" . urlencode($returnTo) . "&status=error&msg=" . urlencode("Database error: " . $conn->error));
+  header("Location: " . edit_error_redirect($recordId, $returnTo, "Database error: " . $conn->error, $isPopup));
   exit;
 }
 
@@ -73,7 +84,7 @@ $recordName = trim((string)($nameRow["name"] ?? ""));
 
 $deleteStmt = $conn->prepare("DELETE FROM records WHERE record_id = ? LIMIT 1");
 if (!$deleteStmt) {
-  header("Location: edit.php?record_id=" . urlencode((string)$recordId) . "&return_to=" . urlencode($returnTo) . "&status=error&msg=" . urlencode("Database error: " . $conn->error));
+  header("Location: " . edit_error_redirect($recordId, $returnTo, "Database error: " . $conn->error, $isPopup));
   exit;
 }
 
@@ -81,7 +92,7 @@ $deleteStmt->bind_param("i", $recordId);
 if (!$deleteStmt->execute()) {
   $error = $deleteStmt->error;
   $deleteStmt->close();
-  header("Location: edit.php?record_id=" . urlencode((string)$recordId) . "&return_to=" . urlencode($returnTo) . "&status=error&msg=" . urlencode("Failed deleting record: " . $error));
+  header("Location: " . edit_error_redirect($recordId, $returnTo, "Failed deleting record: " . $error, $isPopup));
   exit;
 }
 

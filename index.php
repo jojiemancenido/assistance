@@ -425,6 +425,8 @@ $baseQuery = [
   "barangay" => $barangayFilter,
   "sort" => $sort,
 ];
+$editReturnToQuery = build_query($baseQuery);
+$editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQuery) : "") . "#records-section";
 ?>
 
 <!doctype html>
@@ -1002,9 +1004,9 @@ $baseQuery = [
                       <?php endif; ?>
                     </span>
                   </th>
-                  <th>Office</th>
+                  <th>Municipality</th>
+                  <th>Province</th>
                   <?php if ($isMaifDashboard): ?>
-                    <th>Municipality</th>
                     <th>Age</th>
                     <th>Birthdate</th>
                     <th>Contact Number</th>
@@ -1093,9 +1095,9 @@ $baseQuery = [
                       <td class="strong"><?php echo htmlspecialchars($r["name"]); ?></td>
                       <td><?php echo htmlspecialchars($typeLabel); ?></td>
                       <td><?php echo htmlspecialchars($r["barangay"] ?? ""); ?></td>
-                      <td><?php echo htmlspecialchars(((string)($r["office_scope"] ?? "")) === "maif" ? "MAIF" : ucfirst((string)($r["office_scope"] ?? "municipality"))); ?></td>
+                      <td><?php echo htmlspecialchars((string)($r["municipality"] ?? "")); ?></td>
+                      <td><?php echo htmlspecialchars((string)($r["province"] ?? "")); ?></td>
                       <?php if ($isMaifDashboard): ?>
-                        <td><?php echo htmlspecialchars((string)($r["municipality"] ?? "")); ?></td>
                         <td class="mono"><?php echo htmlspecialchars((string)(($r["age"] ?? "") !== null ? (string)($r["age"] ?? "") : "")); ?></td>
                         <td class="mono"><?php echo htmlspecialchars((string)($r["birthdate"] ?? "")); ?></td>
                         <td><?php echo htmlspecialchars((string)($r["contact_number"] ?? "")); ?></td>
@@ -1131,14 +1133,15 @@ $baseQuery = [
                           >
                             View
                           </button>
-                          <a class="btn btn--secondary btn--sm" href="edit.php?record_id=<?php echo urlencode((string)$r["record_id"]); ?>">Edit</a>
+                          <?php $editHref = "edit.php?record_id=" . urlencode((string)$r["record_id"]) . "&return_to=" . urlencode($editReturnTo) . "&popup=1"; ?>
+                          <a class="btn btn--secondary btn--sm record-edit-btn" href="<?php echo htmlspecialchars($editHref); ?>" data-edit-url="<?php echo htmlspecialchars($editHref, ENT_QUOTES); ?>">Edit</a>
                         </div>
                       </td>
                     </tr>
                   <?php endwhile; ?>
                 <?php else: ?>
                   <tr>
-                    <td colspan="<?php echo $isMaifDashboard ? "17" : "10"; ?>" class="muted">No records found.</td>
+                    <td colspan="<?php echo $isMaifDashboard ? "17" : "11"; ?>" class="muted">No records found.</td>
                   </tr>
                 <?php endif; ?>
               </tbody>
@@ -1282,6 +1285,18 @@ $baseQuery = [
         </div>
       </div>
     </div>
+    <div id="record-edit-overlay" class="record-edit-overlay hidden" aria-hidden="true">
+      <div class="record-edit-panel" role="dialog" aria-modal="true" aria-labelledby="record-edit-title">
+        <div class="record-edit-panel__head">
+          <div>
+            <p class="record-edit-panel__eyebrow">Edit Record</p>
+            <h3 id="record-edit-title">Update Beneficiary Record</h3>
+          </div>
+          <button type="button" class="record-edit-close" id="record-edit-close" aria-label="Close edit panel">&times;</button>
+        </div>
+        <iframe id="record-edit-frame" class="record-edit-frame" title="Edit Record"></iframe>
+      </div>
+    </div>
 
     <footer class="footer">
       <span class="muted">Local system â€¢ XAMPP (MySQL) â€¢ PHP</span>
@@ -1289,6 +1304,75 @@ $baseQuery = [
 
   </div>
 
+  <script>
+    (function(){
+      const overlay = document.getElementById('record-edit-overlay');
+      const closeBtn = document.getElementById('record-edit-close');
+      const frame = document.getElementById('record-edit-frame');
+      if (!overlay || !closeBtn || !frame) return;
+
+      function isOpen(){
+        return !overlay.classList.contains('hidden');
+      }
+
+      function openEdit(url){
+        if (!url) return;
+        frame.setAttribute('src', url);
+        overlay.classList.remove('hidden');
+        overlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+      }
+
+      function closeEdit(){
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        frame.removeAttribute('src');
+        document.body.classList.remove('modal-open');
+      }
+
+      document.addEventListener('click', function(e){
+        const link = e.target.closest('.record-edit-btn');
+        if (link) {
+          e.preventDefault();
+          openEdit(link.getAttribute('data-edit-url') || link.getAttribute('href') || '');
+          return;
+        }
+        if (e.target === overlay) {
+          closeEdit();
+        }
+      });
+
+      closeBtn.addEventListener('click', closeEdit);
+
+      document.addEventListener('keydown', function(e){
+        if (e.key === 'Escape' && isOpen()) {
+          closeEdit();
+        }
+      });
+
+      frame.addEventListener('load', function(){
+        if (!isOpen()) return;
+        try {
+          const loc = frame.contentWindow.location;
+          const path = (loc.pathname || '').toLowerCase();
+          const file = path.substring(path.lastIndexOf('/') + 1);
+          if (file === 'index.php' || file === 'records.php' || file === 'super_admin.php') {
+            window.location.href = file + (loc.search || '') + (loc.hash || '');
+          }
+        } catch (err) {}
+      });
+
+      window.addEventListener('message', function(event){
+        const data = event && event.data ? event.data : null;
+        if (!data || data.type !== 'close-record-edit-popup') return;
+        if (typeof data.redirectUrl === 'string' && data.redirectUrl.trim() !== '') {
+          window.location.href = data.redirectUrl;
+          return;
+        }
+        closeEdit();
+      });
+    })();
+  </script>
   <script>
     (function(){
       const typeSel = document.getElementById('type');
@@ -1423,6 +1507,51 @@ $baseQuery = [
         monthYear: document.getElementById('view-record-month-year'),
         notes: document.getElementById('view-record-notes')
       };
+      const identityCard = fields.name ? fields.name.closest('.record-view-hero__identity') : null;
+      const amountCard = fields.amount ? fields.amount.closest('.record-view-hero__amount') : null;
+      const nameBaseSize = fields.name ? (parseFloat(window.getComputedStyle(fields.name).fontSize) || 30) : 30;
+      const amountBaseSize = fields.amount ? (parseFloat(window.getComputedStyle(fields.amount).fontSize) || 30) : 30;
+
+      function fitTextWidth(el, card, baseSize, minSize, step){
+        if (!el || !card) return;
+        el.style.fontSize = '';
+        el.style.lineHeight = '';
+        let currentSize = baseSize;
+        let guard = 0;
+        const maxWidth = Math.max(120, card.clientWidth - 24);
+
+        while (
+          guard < 34 &&
+          currentSize > minSize &&
+          el.scrollWidth > maxWidth
+        ) {
+          currentSize -= step;
+          el.style.fontSize = currentSize.toFixed(2) + 'px';
+          guard += 1;
+        }
+      }
+
+      function fitRecordName(){
+        if (!fields.name || !identityCard) return;
+        const nameText = String(fields.name.textContent || '').trim();
+        fields.name.style.whiteSpace = 'normal';
+        fields.name.style.wordBreak = 'normal';
+        fields.name.style.overflowWrap = (/\s/.test(nameText) ? 'normal' : 'anywhere');
+        fitTextWidth(fields.name, identityCard, nameBaseSize, 13.5, 0.65);
+      }
+
+      function fitRecordAmount(){
+        if (!fields.amount || !amountCard) return;
+        fields.amount.style.whiteSpace = 'nowrap';
+        fields.amount.style.wordBreak = 'normal';
+        fields.amount.style.overflowWrap = 'normal';
+        fitTextWidth(fields.amount, amountCard, amountBaseSize, 16, 0.55);
+      }
+
+      function fitRecordHeroText(){
+        fitRecordName();
+        fitRecordAmount();
+      }
 
       function setField(el, value){
         if (!el) return;
@@ -1451,6 +1580,11 @@ $baseQuery = [
         overlay.classList.remove('hidden');
         overlay.setAttribute('aria-hidden', 'false');
         document.body.classList.add('modal-open');
+        window.requestAnimationFrame(function(){
+          fitRecordHeroText();
+          window.setTimeout(fitRecordHeroText, 40);
+          window.setTimeout(fitRecordHeroText, 120);
+        });
       }
 
       function closeView(){
@@ -1487,6 +1621,12 @@ $baseQuery = [
       if (printBtn) printBtn.addEventListener('click', runRecordPrint);
       window.addEventListener('afterprint', function(){
         document.body.classList.remove('print-record-view');
+      });
+
+      window.addEventListener('resize', function(){
+        if (!overlay.classList.contains('hidden')) {
+          fitRecordHeroText();
+        }
       });
 
       document.addEventListener('keydown', function(e){
@@ -1633,15 +1773,18 @@ $baseQuery = [
 
       function renderRows(items, query){
         if (!Array.isArray(items) || items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="<?php echo $isMaifDashboard ? "17" : "10"; ?>" class="muted">No records found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="<?php echo $isMaifDashboard ? "17" : "11"; ?>" class="muted">No records found.</td></tr>';
           if (subtitle) {
             subtitle.textContent = buildSubtitleForCount(0, query);
           }
           return;
         }
 
+        const popupReturnTo = <?php echo json_encode($editReturnTo, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
         const rowsHtml = items.map(function(row){
-          const editUrl = 'edit.php?record_id=' + encodeURIComponent(row.record_id ?? '');
+          const editUrl = 'edit.php?record_id=' + encodeURIComponent(row.record_id ?? '') +
+            '&return_to=' + encodeURIComponent(popupReturnTo) +
+            '&popup=1';
           const viewAttrs =
             ' data-record-id="' + escapeHtml(row.record_id) + '"' +
             ' data-record-name="' + escapeHtml(row.name) + '"' +
@@ -1661,8 +1804,7 @@ $baseQuery = [
             ' data-record-notes="' + escapeHtml(row.notes) + '"';
 
           const maifCells = <?php echo $isMaifDashboard ? "true" : "false"; ?>
-            ? '<td>' + escapeHtml(row.municipality) + '</td>' +
-              '<td class="mono">' + escapeHtml(row.age) + '</td>' +
+            ? '<td class="mono">' + escapeHtml(row.age) + '</td>' +
               '<td class="mono">' + escapeHtml(row.birthdate) + '</td>' +
               '<td>' + escapeHtml(row.contact_number) + '</td>' +
               '<td class="note">' + escapeHtml(row.diagnosis) + '</td>' +
@@ -1675,7 +1817,8 @@ $baseQuery = [
             '<td class="strong">' + escapeHtml(row.name) + '</td>' +
             '<td>' + escapeHtml(row.type_label) + '</td>' +
             '<td>' + escapeHtml(row.barangay) + '</td>' +
-            '<td>' + escapeHtml(row.office_display) + '</td>' +
+            '<td>' + escapeHtml(row.municipality) + '</td>' +
+            '<td>' + escapeHtml(row.province) + '</td>' +
             maifCells +
             '<td class="mono col-amount">' + escapeHtml(row.amount_display) + '</td>' +
             '<td class="mono">' + escapeHtml(row.record_date) + '</td>' +
@@ -1683,7 +1826,7 @@ $baseQuery = [
             '<td class="note">' + escapeHtml(row.notes) + '</td>' +
             '<td><div class="record-action-group">' +
               '<button type="button" class="btn btn--secondary btn--sm record-view-btn"' + viewAttrs + '>View</button>' +
-              '<a class="btn btn--secondary btn--sm" href="' + editUrl + '">Edit</a>' +
+              '<a class="btn btn--secondary btn--sm record-edit-btn" href="' + editUrl + '" data-edit-url="' + editUrl + '">Edit</a>' +
             '</div></td>' +
           '</tr>';
         }).join('');

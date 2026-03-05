@@ -98,6 +98,14 @@ $recordId = (int)($_GET["record_id"] ?? 0);
 $returnTo = normalize_return_to((string)($_GET["return_to"] ?? ""), $isSuperAdmin);
 $status = trim((string)($_GET["status"] ?? ""));
 $msg = trim((string)($_GET["msg"] ?? ""));
+$isPopup = (isset($_GET["popup"]) && (string)$_GET["popup"] === "1");
+$popupClose = $isPopup && (isset($_GET["close"]) && (string)$_GET["close"] === "1");
+$popupRedirectTo = "";
+if ($popupClose) {
+  $popupStatus = ($status !== "") ? $status : "success";
+  $popupMessage = ($msg !== "") ? $msg : "Record updated successfully.";
+  $popupRedirectTo = with_status_message($returnTo, $popupStatus, $popupMessage);
+}
 
 if ($recordId <= 0) {
   header("Location: " . with_status_message($returnTo, "error", "Invalid record selected for editing."));
@@ -207,11 +215,13 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
         <p>Update beneficiary information</p>
       </div>
       <div class="header-meta">
-        <?php if (is_super_admin()): ?>
+        <?php if (!$isPopup && is_super_admin()): ?>
           <a class="btn btn--secondary btn--sm" href="logs.php">Logs</a>
         <?php endif; ?>
-        <a class="btn btn--secondary btn--sm" href="<?php echo htmlspecialchars($backDashboardHref); ?>">Back to Dashboard</a>
-        <a class="btn btn--secondary btn--sm" href="records.php">All Records</a>
+        <?php if (!$isPopup): ?>
+          <a class="btn btn--secondary btn--sm" href="<?php echo htmlspecialchars($backDashboardHref); ?>">Back to Dashboard</a>
+          <a class="btn btn--secondary btn--sm" href="records.php">All Records</a>
+        <?php endif; ?>
       </div>
     </header>
 
@@ -231,6 +241,7 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
           <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
           <input type="hidden" name="record_id" value="<?php echo (int)$recordId; ?>" />
           <input type="hidden" name="return_to" value="<?php echo htmlspecialchars($returnTo); ?>" />
+          <input type="hidden" name="popup" value="<?php echo $isPopup ? "1" : "0"; ?>" />
 
           <div class="form-grid">
             <div class="field">
@@ -359,7 +370,7 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
           </div>
 
           <div class="actions">
-            <a class="btn btn--secondary" href="<?php echo htmlspecialchars($returnTo); ?>">Cancel</a>
+            <a class="btn btn--secondary" id="edit-cancel-btn" href="<?php echo htmlspecialchars($returnTo); ?>">Cancel</a>
             <?php if ($canDeleteRecord): ?>
               <button class="btn btn--danger" type="submit" formaction="delete_record.php" formmethod="POST" formnovalidate onclick="return confirm('Delete this record permanently?');">Delete Record</button>
             <?php endif; ?>
@@ -370,6 +381,35 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
     </section>
   </div>
 
+  <script>
+    (function(){
+      var isPopup = <?php echo $isPopup ? "true" : "false"; ?>;
+      var popupClose = <?php echo $popupClose ? "true" : "false"; ?>;
+      var popupRedirectTo = <?php echo json_encode($popupRedirectTo, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      if (!isPopup || window.parent === window) return;
+
+      function notifyParentClose(redirectUrl){
+        try {
+          window.parent.postMessage({
+            type: 'close-record-edit-popup',
+            redirectUrl: redirectUrl || ''
+          }, '*');
+        } catch (err) {}
+      }
+
+      var cancelBtn = document.getElementById('edit-cancel-btn');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', function(e){
+          e.preventDefault();
+          notifyParentClose('');
+        });
+      }
+
+      if (popupClose) {
+        notifyParentClose(popupRedirectTo);
+      }
+    })();
+  </script>
   <script>
     (function(){
       const municipality = document.getElementById('municipality');

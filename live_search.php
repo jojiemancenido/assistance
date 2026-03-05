@@ -107,7 +107,7 @@ if ($barangayFilter !== "") {
   $params[] = $barangayFilter;
 }
 
-$selectCols = "record_id, name, type, barangay, office_scope, municipality, amount, record_date, month_year, notes";
+$selectCols = "record_id, name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes";
 if ($isMaifDashboard) {
   $selectCols .= ", age, birthdate, contact_number, diagnosis, hospital, contact_person";
 }
@@ -160,6 +160,7 @@ while ($row = $result->fetch_assoc()) {
     "barangay" => (string)($row["barangay"] ?? ""),
     "office_display" => ((string)($row["office_scope"] ?? "")) === "maif" ? "MAIF" : ucfirst((string)($row["office_scope"] ?? "municipality")),
     "municipality" => (string)($row["municipality"] ?? ""),
+    "province" => (string)($row["province"] ?? ""),
     "age" => (string)($row["age"] ?? ""),
     "birthdate" => (string)($row["birthdate"] ?? ""),
     "contact_number" => (string)($row["contact_number"] ?? ""),

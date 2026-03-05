@@ -51,13 +51,18 @@ function with_status_message(string $url, string $status, string $message): stri
   return $url . $joiner . "status=" . urlencode($status) . "&msg=" . urlencode($message) . $fragment;
 }
 
-function redirect_edit(int $recordId, string $status, string $message, string $returnTo): void {
-  header(
-    "Location: edit.php?record_id=" . urlencode((string)$recordId) .
+function redirect_edit(int $recordId, string $status, string $message, string $returnTo, bool $isPopup = false, bool $closeAfter = false): void {
+  $url = "edit.php?record_id=" . urlencode((string)$recordId) .
     "&return_to=" . urlencode($returnTo) .
     "&status=" . urlencode($status) .
-    "&msg=" . urlencode($message)
-  );
+    "&msg=" . urlencode($message);
+  if ($isPopup) {
+    $url .= "&popup=1";
+  }
+  if ($closeAfter) {
+    $url .= "&close=1";
+  }
+  header("Location: " . $url);
   exit;
 }
 
@@ -78,6 +83,7 @@ $hospital = trim((string)($_POST["hospital"] ?? ""));
 $contactPerson = trim((string)($_POST["contact_person"] ?? ""));
 $csrfToken = $_POST["csrf_token"] ?? "";
 $returnTo = normalize_return_to((string)($_POST["return_to"] ?? ""), is_super_admin());
+$isPopup = (isset($_POST["popup"]) && (string)$_POST["popup"] === "1");
 $scopedBarangay = current_scoped_barangay();
 if ($scopedBarangay !== "") {
   $barangay = $scopedBarangay;
@@ -94,21 +100,21 @@ if ($recordId <= 0) {
 }
 
 if (!verify_csrf_token($csrfToken)) {
-  redirect_edit($recordId, "error", "Invalid request token. Please refresh and try again.", $returnTo);
+  redirect_edit($recordId, "error", "Invalid request token. Please refresh and try again.", $returnTo, $isPopup);
 }
 
 if ($name === "" || $barangay === "" || $amountRaw === "" || !is_numeric($amountRaw)) {
-  redirect_edit($recordId, "error", "Please fill out all required fields correctly.", $returnTo);
+  redirect_edit($recordId, "error", "Please fill out all required fields correctly.", $returnTo, $isPopup);
 }
 
 $amount = (float)$amountRaw;
 if ($amount < 0) {
-  redirect_edit($recordId, "error", "Amount must be 0 or higher.", $returnTo);
+  redirect_edit($recordId, "error", "Amount must be 0 or higher.", $returnTo, $isPopup);
 }
 
 $ts = strtotime($recordDate);
 if ($ts === false) {
-  redirect_edit($recordId, "error", "Invalid date.", $returnTo);
+  redirect_edit($recordId, "error", "Invalid date.", $returnTo, $isPopup);
 }
 $monthYear = date("Y-m", $ts);
 
@@ -123,7 +129,7 @@ $checkSql .= " LIMIT 1";
 
 $checkStmt = $conn->prepare($checkSql);
 if (!$checkStmt) {
-  redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo);
+  redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo, $isPopup);
 }
 if ($isOfficeScoped && $scopedBarangay !== "") {
   $checkStmt->bind_param("iss", $recordId, $scopedOffice, $scopedBarangay);
@@ -154,17 +160,17 @@ if ($isMaifRecord) {
   $typeSpecify = "";
   $municipality = normalize_maif_municipality($postedMunicipality);
   if ($municipality === "") {
-    redirect_edit($recordId, "error", "Please select a municipality for the MAIF entry.", $returnTo);
+    redirect_edit($recordId, "error", "Please select a municipality for the MAIF entry.", $returnTo, $isPopup);
   }
 } else {
   $municipality = "Daet";
 }
 
 if ($type === "") {
-  redirect_edit($recordId, "error", "Please fill out all required fields correctly.", $returnTo);
+  redirect_edit($recordId, "error", "Please fill out all required fields correctly.", $returnTo, $isPopup);
 }
 if (!$isMaifRecord && $type === "Other" && $typeSpecify === "") {
-  redirect_edit($recordId, "error", "Please specify the Type of Assistance when you choose Other.", $returnTo);
+  redirect_edit($recordId, "error", "Please specify the Type of Assistance when you choose Other.", $returnTo, $isPopup);
 }
 if ($type !== "Other") {
   $typeSpecify = "";
@@ -173,11 +179,11 @@ if ($type !== "Other") {
 $age = null;
 if ($ageRaw !== "") {
   if (!preg_match('/^\d{1,3}$/', $ageRaw)) {
-    redirect_edit($recordId, "error", "Age must be a whole number.", $returnTo);
+    redirect_edit($recordId, "error", "Age must be a whole number.", $returnTo, $isPopup);
   }
   $age = (int)$ageRaw;
   if ($age < 0 || $age > 150) {
-    redirect_edit($recordId, "error", "Age must be between 0 and 150.", $returnTo);
+    redirect_edit($recordId, "error", "Age must be between 0 and 150.", $returnTo, $isPopup);
   }
 }
 
@@ -193,10 +199,10 @@ if (!$isMaifRecord) {
 if ($birthdate !== "") {
   $birthTs = strtotime($birthdate);
   if ($birthTs === false) {
-    redirect_edit($recordId, "error", "Invalid birthdate.", $returnTo);
+    redirect_edit($recordId, "error", "Invalid birthdate.", $returnTo, $isPopup);
   }
   if ($birthTs > strtotime(date("Y-m-d"))) {
-    redirect_edit($recordId, "error", "Birthdate cannot be in the future.", $returnTo);
+    redirect_edit($recordId, "error", "Birthdate cannot be in the future.", $returnTo, $isPopup);
   }
   if ($age === null) {
     $birthDateObj = new DateTimeImmutable(date("Y-m-d", $birthTs));
@@ -229,7 +235,7 @@ if ($hasTypeSpecify) {
   $stmt = $conn->prepare($updateSql);
 
   if (!$stmt) {
-    redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo);
+    redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo, $isPopup);
   }
 
   if ($isOfficeScoped && $scopedBarangay !== "") {
@@ -340,7 +346,7 @@ if ($hasTypeSpecify) {
   $stmt = $conn->prepare($updateSql);
 
   if (!$stmt) {
-    redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo);
+    redirect_edit($recordId, "error", "Database error: " . $conn->error, $returnTo, $isPopup);
   }
 
   if ($isOfficeScoped && $scopedBarangay !== "") {
@@ -437,7 +443,7 @@ if ($hasTypeSpecify) {
 if (!$stmt->execute()) {
   $error = $stmt->error;
   $stmt->close();
-  redirect_edit($recordId, "error", "Error updating record: " . $error, $returnTo);
+  redirect_edit($recordId, "error", "Error updating record: " . $error, $returnTo, $isPopup);
 }
 
 $affected = $stmt->affected_rows;
@@ -451,10 +457,17 @@ if ($affected > 0) {
     $actor !== "" ? $actor : null,
     $recordId
   );
+  if ($isPopup) {
+    redirect_edit($recordId, "success", "Record updated successfully.", $returnTo, true, true);
+  }
   header("Location: " . with_status_message($returnTo, "success", "Record updated successfully."));
   exit;
 }
 
+if ($isPopup) {
+  redirect_edit($recordId, "success", "No changes were made.", $returnTo, true, true);
+}
 header("Location: " . with_status_message($returnTo, "success", "No changes were made."));
 exit;
 ?>
+
