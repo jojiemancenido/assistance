@@ -4946,3 +4946,117 @@ body.superadmin-page .sa-global-stats .sa-summary-panel--tracking .sa-summary-pa
 .record-view-notes-panel{
   border:1px dashed rgba(245, 158, 11, .45);
 }
+
+/* Super Admin mobile hard-fit: prevent overlap and force safe single-column flow */
+@media (max-width: 980px){
+  body.superadmin-page .sa-global-stats__body,
+  body.superadmin-page .sa-stats-layout{
+    display:grid;
+    grid-template-columns:1fr !important;
+    gap:10px !important;
+  }
+
+  body.superadmin-page .sa-stats-grid,
+  body.superadmin-page .sa-stats-right{
+    display:grid;
+    grid-template-columns:1fr !important;
+    gap:10px !important;
+  }
+
+  body.superadmin-page .sa-stats-grid > *,
+  body.superadmin-page .sa-stats-right > *{
+    width:100%;
+    min-width:0;
+  }
+
+  body.superadmin-page .sa-distribution-card,
+  body.superadmin-page .sa-summary-panel,
+  body.superadmin-page .sa-report-line-card,
+  body.superadmin-page .sa-report-line-inspector,
+  body.superadmin-page .sa-report-stat{
+    overflow:hidden;
+    box-sizing:border-box;
+  }
+
+  body.superadmin-page .sa-donut-layout,
+  body.superadmin-page .sa-donut-layout--compact,
+  body.superadmin-page .sa-stats-left .sa-donut-layout{
+    grid-template-columns:1fr !important;
+    justify-items:center;
+    align-items:start;
+  }
+
+  body.superadmin-page .sa-donut,
+  body.superadmin-page .sa-donut-layout--compact .sa-donut,
+  body.superadmin-page .sa-stats-left .sa-donut{
+    width:min(68vw, 196px) !important;
+    height:min(68vw, 196px) !important;
+    margin-inline:auto;
+  }
+
+  body.superadmin-page .sa-donut::after,
+  body.superadmin-page .sa-donut-layout--compact .sa-donut::after,
+  body.superadmin-page .sa-stats-left .sa-donut::after{
+    inset:clamp(18px, 7vw, 24px) !important;
+  }
+
+  body.superadmin-page .js-donut-center{
+    max-width:72% !important;
+  }
+
+  body.superadmin-page .sa-legend-list,
+  body.superadmin-page .sa-legend-list--compact,
+  body.superadmin-page .sa-stats-left .sa-legend-list{
+    width:100%;
+    max-height:220px;
+    overflow:auto;
+  }
+
+  body.superadmin-page .sa-legend-item{
+    min-width:0;
+  }
+
+  body.superadmin-page .sa-legend-name,
+  body.superadmin-page .sa-legend-meta{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  body.superadmin-page .sa-report-filter--panel{
+    grid-template-columns:repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  body.superadmin-page .sa-report-stat-grid{
+    grid-template-columns:1fr !important;
+  }
+
+  body.superadmin-page .sa-report-stat strong{
+    font-size:clamp(18px, 5.6vw, 24px);
+    line-height:1.15;
+    overflow-wrap:anywhere;
+  }
+
+  body.superadmin-page .sa-report-line-card__head{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  body.superadmin-page .sa-report-line-card__head small{
+    text-align:left;
+  }
+}
+
+@media (max-width: 560px){
+  body.superadmin-page .sa-report-filter--panel{
+    grid-template-columns:1fr !important;
+  }
+
+  body.superadmin-page .sa-report-line-labels{
+    gap:2px;
+  }
+
+  body.superadmin-page .sa-report-line-labels span{
+    font-size:9px;
+  }
+}

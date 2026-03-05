@@ -1495,14 +1495,39 @@ if (isset($_GET["report_tracking_live"]) && $_GET["report_tracking_live"] === "1
   </script>
   <div class="app">
     <header class="app-header">
-      <div class="brand-text">
-        <h1>Super Admin Dashboard</h1>
-        <p>Global system management and statistics</p>
+      <div class="brand">
+        <img class="logo" src="daet logo lgu.png" alt="Logo" />
+        <div class="brand-text">
+          <h1>Super Admin Dashboard</h1>
+          <p>Daet, Camarines Norte • Global system management</p>
+        </div>
       </div>
       <div class="header-meta">
+        <div class="user-chip">
+          Signed in as <strong><?php echo htmlspecialchars($authUser); ?></strong>
+        </div>
         <div class="user-chip">Role <strong>Super Admin</strong></div>
-        <a class="btn btn--secondary btn--sm" href="index.php" data-dashboard-switch="1">Dashboard</a>
-        <a class="btn btn--secondary btn--sm" href="logs.php">Logs</a>
+        <a class="btn btn--sm" href="index.php" data-dashboard-switch="1">Dashboard</a>
+        <a class="btn btn--sm" href="logs.php">Logs</a>
+        <details class="account-menu">
+          <summary class="btn btn--sm account-menu__summary">
+            <span class="account-menu__summary-label">Account</span>
+          </summary>
+          <div class="account-menu__panel">
+            <div class="account-menu__panel-head">Account Options</div>
+            <a class="account-menu__item" href="change_password.php">
+              <span class="account-menu__item-title">Change Password</span>
+              <span class="account-menu__item-sub">Update your current password</span>
+            </a>
+            <form method="POST" action="logout.php" class="account-menu__form">
+              <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token()); ?>" />
+              <button class="account-menu__item account-menu__item--button" type="submit">
+                <span class="account-menu__item-title">Log Out</span>
+                <span class="account-menu__item-sub">Sign out of this account</span>
+              </button>
+            </form>
+          </div>
+        </details>
       </div>
     </header>
 
