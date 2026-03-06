@@ -3,7 +3,123 @@ require_once "auth.php";
 require_login();
 require_once "db.php";
 
-$name = trim($_POST["name"] ?? "");
+function normalize_name_piece(string $value): string {
+  $value = trim($value);
+  if ($value === "") return "";
+  $value = preg_replace('/\s+/u', ' ', $value);
+  return trim((string)$value);
+}
+
+function normalize_name_extension(string $value): string {
+  $clean = normalize_name_piece($value);
+  if ($clean === "") return "";
+  $key = strtoupper(str_replace(".", "", $clean));
+  $map = [
+    "JR" => "Jr.",
+    "SR" => "Sr.",
+    "II" => "II",
+    "III" => "III",
+    "IV" => "IV",
+    "V" => "V",
+    "VI" => "VI",
+  ];
+  return $map[$key] ?? $clean;
+}
+
+function split_extension_from_tokens(array $tokens): array {
+  if (empty($tokens)) return [$tokens, ""];
+  $lastToken = (string)($tokens[count($tokens) - 1] ?? "");
+  $normalized = normalize_name_extension($lastToken);
+  if ($normalized === "") return [$tokens, ""];
+  $key = strtoupper(str_replace(".", "", $lastToken));
+  $known = ["JR", "SR", "II", "III", "IV", "V", "VI"];
+  if (!in_array($key, $known, true)) {
+    return [$tokens, ""];
+  }
+  array_pop($tokens);
+  return [$tokens, $normalized];
+}
+
+function split_record_name_parts(string $fullName): array {
+  $fullName = trim((string)$fullName);
+  if ($fullName === "") return ["", "", "", ""];
+
+  if (str_contains($fullName, ",")) {
+    $chunks = explode(",", $fullName, 2);
+    $last = normalize_name_piece((string)($chunks[0] ?? ""));
+    $rest = normalize_name_piece((string)($chunks[1] ?? ""));
+    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+    [$tokens, $extension] = split_extension_from_tokens(is_array($tokens) ? $tokens : []);
+    $first = normalize_name_piece((string)($tokens[0] ?? ""));
+    $middle = "";
+    if (count($tokens) > 1) {
+      $middle = normalize_name_piece(implode(" ", array_slice($tokens, 1)));
+    }
+    return [$last, $first, $middle, $extension];
+  }
+
+  $tokens = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
+  $tokens = is_array($tokens) ? $tokens : [];
+  [$tokens, $extension] = split_extension_from_tokens($tokens);
+  if (count($tokens) === 0) return ["", "", "", $extension];
+  if (count($tokens) === 1) return ["", normalize_name_piece((string)$tokens[0]), "", $extension];
+  if (count($tokens) === 2) return [normalize_name_piece((string)$tokens[1]), normalize_name_piece((string)$tokens[0]), "", $extension];
+
+  $first = normalize_name_piece((string)$tokens[0]);
+  $middle = normalize_name_piece((string)$tokens[1]);
+  $last = normalize_name_piece(implode(" ", array_slice($tokens, 2)));
+  return [$last, $first, $middle, $extension];
+}
+
+function build_record_name_for_storage(string $last, string $first, string $middle, string $extension): string {
+  $last = normalize_name_piece($last);
+  $first = normalize_name_piece($first);
+  $middle = normalize_name_piece($middle);
+  $extension = normalize_name_extension($extension);
+  $full = $last . ", " . $first;
+  if ($middle !== "") {
+    $full .= " " . $middle;
+  }
+  if ($extension !== "") {
+    $full .= " " . $extension;
+  }
+  return trim($full);
+}
+
+function format_name_middle_initial(string $fullName): string {
+  [$last, $first, $middle, $extension] = split_record_name_parts($fullName);
+  if ($last === "" && $first === "") {
+    return normalize_name_piece($fullName);
+  }
+  $out = trim($last);
+  if ($first !== "") {
+    $out .= ($out !== "" ? ", " : "") . $first;
+  }
+  if ($middle !== "") {
+    $middleInitial = strtoupper(substr(trim($middle), 0, 1));
+    if ($middleInitial !== "") {
+      $out .= " " . $middleInitial . ".";
+    }
+  }
+  if ($extension !== "") {
+    $out .= " " . $extension;
+  }
+  return trim($out);
+}
+
+$lastName = normalize_name_piece((string)($_POST["last_name"] ?? ""));
+$firstName = normalize_name_piece((string)($_POST["first_name"] ?? ""));
+$middleName = normalize_name_piece((string)($_POST["middle_name"] ?? ""));
+$nameExtension = normalize_name_extension((string)($_POST["name_extension"] ?? ""));
+$legacyNameRaw = normalize_name_piece((string)($_POST["name"] ?? ""));
+if (($lastName === "" || $firstName === "" || $middleName === "") && $legacyNameRaw !== "") {
+  [$legacyLast, $legacyFirst, $legacyMiddle, $legacyExtension] = split_record_name_parts($legacyNameRaw);
+  if ($lastName === "") $lastName = $legacyLast;
+  if ($firstName === "") $firstName = $legacyFirst;
+  if ($middleName === "") $middleName = $legacyMiddle;
+  if ($nameExtension === "") $nameExtension = $legacyExtension;
+}
+$name = build_record_name_for_storage($lastName, $firstName, $middleName, $nameExtension);
 $type = trim($_POST["type"] ?? "");
 $type_specify = trim($_POST["type_specify"] ?? "");
 $barangay = trim($_POST["barangay"] ?? "");
@@ -64,6 +180,11 @@ if (!verify_csrf_token($csrfToken)) {
 if ($isMaifOffice) {
   $type = "Medical";
   $type_specify = "";
+}
+
+if ($lastName === "" || $firstName === "" || $middleName === "") {
+  redirect_with_msg("error", "Please provide Last Name, First Name, and Middle Name.");
+  exit;
 }
 
 if ($name === "" || $type === "" || $barangay === "" || $amountRaw === "" || !is_numeric($amountRaw)) {
@@ -177,13 +298,17 @@ if ($dupStmt) {
 if (!$confirmDuplicate && $duplicateCount > 0) {
   $_SESSION["duplicate_warning"] = [
     "count" => $duplicateCount,
-    "name" => $name,
+    "name" => format_name_middle_initial($name),
     "barangay" => $barangay,
     "type" => $typeLabel,
     "year" => (string)$yearKey,
   ];
   $_SESSION["duplicate_form_draft"] = [
     "name" => $name,
+    "last_name" => $lastName,
+    "first_name" => $firstName,
+    "middle_name" => $middleName,
+    "name_extension" => $nameExtension,
     "type" => $type,
     "type_specify" => $type_specify,
     "barangay" => $barangay,

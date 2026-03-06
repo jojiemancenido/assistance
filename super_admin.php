@@ -54,6 +54,92 @@ function format_office_scope_name(string $officeScope): string {
   return ($officeScope === "" ? "Municipality" : ucfirst($officeScope));
 }
 
+function normalize_name_piece(string $value): string {
+  $value = trim($value);
+  if ($value === "") return "";
+  $value = preg_replace('/\s+/u', ' ', $value);
+  return trim((string)$value);
+}
+
+function normalize_name_extension(string $value): string {
+  $clean = normalize_name_piece($value);
+  if ($clean === "") return "";
+  $key = strtoupper(str_replace(".", "", $clean));
+  $map = [
+    "JR" => "Jr.",
+    "SR" => "Sr.",
+    "II" => "II",
+    "III" => "III",
+    "IV" => "IV",
+    "V" => "V",
+    "VI" => "VI",
+  ];
+  return $map[$key] ?? $clean;
+}
+
+function split_extension_from_tokens(array $tokens): array {
+  if (empty($tokens)) return [$tokens, ""];
+  $lastToken = (string)($tokens[count($tokens) - 1] ?? "");
+  $normalized = normalize_name_extension($lastToken);
+  if ($normalized === "") return [$tokens, ""];
+  $key = strtoupper(str_replace(".", "", $lastToken));
+  $known = ["JR", "SR", "II", "III", "IV", "V", "VI"];
+  if (!in_array($key, $known, true)) {
+    return [$tokens, ""];
+  }
+  array_pop($tokens);
+  return [$tokens, $normalized];
+}
+
+function split_record_name_parts(string $fullName): array {
+  $fullName = trim((string)$fullName);
+  if ($fullName === "") return ["", "", "", ""];
+
+  if (str_contains($fullName, ",")) {
+    $chunks = explode(",", $fullName, 2);
+    $last = normalize_name_piece((string)($chunks[0] ?? ""));
+    $rest = normalize_name_piece((string)($chunks[1] ?? ""));
+    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+    [$tokens, $extension] = split_extension_from_tokens(is_array($tokens) ? $tokens : []);
+    $first = normalize_name_piece((string)($tokens[0] ?? ""));
+    $middle = "";
+    if (count($tokens) > 1) {
+      $middle = normalize_name_piece(implode(" ", array_slice($tokens, 1)));
+    }
+    return [$last, $first, $middle, $extension];
+  }
+
+  $tokens = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
+  $tokens = is_array($tokens) ? $tokens : [];
+  [$tokens, $extension] = split_extension_from_tokens($tokens);
+  if (count($tokens) === 0) return ["", "", "", $extension];
+  if (count($tokens) === 1) return ["", normalize_name_piece((string)$tokens[0]), "", $extension];
+  if (count($tokens) === 2) return [normalize_name_piece((string)$tokens[1]), normalize_name_piece((string)$tokens[0]), "", $extension];
+
+  $first = normalize_name_piece((string)$tokens[0]);
+  $middle = normalize_name_piece((string)$tokens[1]);
+  $last = normalize_name_piece(implode(" ", array_slice($tokens, 2)));
+  return [$last, $first, $middle, $extension];
+}
+
+function format_record_name_for_panel(string $fullName): string {
+  [$last, $first, $middle, $extension] = split_record_name_parts($fullName);
+  if ($last === "" && $first === "") {
+    return normalize_name_piece($fullName);
+  }
+  $display = trim($last);
+  if ($first !== "") {
+    $display .= ($display !== "" ? ", " : "") . $first;
+  }
+  if ($middle !== "") {
+    $display .= " " . strtoupper(substr(trim($middle), 0, 1)) . ".";
+  }
+  if ($extension !== "") {
+    $display .= " " . $extension;
+  }
+  return trim($display);
+}
+
 function build_line_chart_geometry(array $values, int $width = 640, int $height = 220, int $padX = 18, int $padY = 20, ?float $maxOverride = null): array {
   $count = count($values);
   if ($count === 0) {
@@ -2337,6 +2423,7 @@ if (isset($_GET["report_tracking_live"]) && $_GET["report_tracking_live"] === "1
                   <?php while ($r = $recordsAll->fetch_assoc()): ?>
                     <?php
                       $notesVal = (string)($r["notes"] ?? "");
+                      $displayName = format_record_name_for_panel((string)($r["name"] ?? ""));
                       $spec = "";
                       if ($hasTypeSpecify) {
                         $spec = trim((string)($r["type_specify"] ?? ""));
@@ -2347,7 +2434,7 @@ if (isset($_GET["report_tracking_live"]) && $_GET["report_tracking_live"] === "1
                     ?>
                     <tr>
                       <td class="mono"><?php echo htmlspecialchars((string)$r["record_id"]); ?></td>
-                      <td class="strong"><?php echo htmlspecialchars((string)$r["name"]); ?></td>
+                      <td class="strong"><?php echo htmlspecialchars($displayName); ?></td>
                       <td><?php echo htmlspecialchars($typeLabel); ?></td>
                       <td><?php echo htmlspecialchars((string)($r["barangay"] ?? "")); ?></td>
                       <td><?php echo htmlspecialchars((string)($r["municipality"] ?? "")); ?></td>
@@ -2430,7 +2517,7 @@ if (isset($_GET["report_tracking_live"]) && $_GET["report_tracking_live"] === "1
 
           return '<tr>' +
             '<td class="mono">' + escapeHtml(row.record_id) + '</td>' +
-            '<td class="strong">' + escapeHtml(row.name) + '</td>' +
+            '<td class="strong">' + escapeHtml(row.name_display || row.name || '') + '</td>' +
             '<td>' + escapeHtml(row.type_label) + '</td>' +
             '<td>' + escapeHtml(row.barangay) + '</td>' +
             '<td>' + escapeHtml(row.municipality) + '</td>' +

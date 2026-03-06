@@ -30,9 +30,96 @@ function extract_specify_from_notes(string &$notes): string {
   return "";
 }
 
+function normalize_name_piece(string $value): string {
+  $value = trim($value);
+  if ($value === "") return "";
+  $value = preg_replace('/\s+/u', ' ', $value);
+  return trim((string)$value);
+}
+
+function normalize_name_extension(string $value): string {
+  $clean = normalize_name_piece($value);
+  if ($clean === "") return "";
+  $key = strtoupper(str_replace(".", "", $clean));
+  $map = [
+    "JR" => "Jr.",
+    "SR" => "Sr.",
+    "II" => "II",
+    "III" => "III",
+    "IV" => "IV",
+    "V" => "V",
+    "VI" => "VI",
+  ];
+  return $map[$key] ?? $clean;
+}
+
+function split_extension_from_tokens(array $tokens): array {
+  if (empty($tokens)) return [$tokens, ""];
+  $lastToken = (string)($tokens[count($tokens) - 1] ?? "");
+  $normalized = normalize_name_extension($lastToken);
+  if ($normalized === "") return [$tokens, ""];
+  $key = strtoupper(str_replace(".", "", $lastToken));
+  $known = ["JR", "SR", "II", "III", "IV", "V", "VI"];
+  if (!in_array($key, $known, true)) {
+    return [$tokens, ""];
+  }
+  array_pop($tokens);
+  return [$tokens, $normalized];
+}
+
+function split_record_name_parts(string $fullName): array {
+  $fullName = trim((string)$fullName);
+  if ($fullName === "") return ["", "", "", ""];
+
+  if (str_contains($fullName, ",")) {
+    $chunks = explode(",", $fullName, 2);
+    $last = normalize_name_piece((string)($chunks[0] ?? ""));
+    $rest = normalize_name_piece((string)($chunks[1] ?? ""));
+    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+    [$tokens, $extension] = split_extension_from_tokens(is_array($tokens) ? $tokens : []);
+    $first = normalize_name_piece((string)($tokens[0] ?? ""));
+    $middle = "";
+    if (count($tokens) > 1) {
+      $middle = normalize_name_piece(implode(" ", array_slice($tokens, 1)));
+    }
+    return [$last, $first, $middle, $extension];
+  }
+
+  $tokens = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
+  $tokens = is_array($tokens) ? $tokens : [];
+  [$tokens, $extension] = split_extension_from_tokens($tokens);
+  if (count($tokens) === 0) return ["", "", "", $extension];
+  if (count($tokens) === 1) return ["", normalize_name_piece((string)$tokens[0]), "", $extension];
+  if (count($tokens) === 2) return [normalize_name_piece((string)$tokens[1]), normalize_name_piece((string)$tokens[0]), "", $extension];
+
+  $first = normalize_name_piece((string)$tokens[0]);
+  $middle = normalize_name_piece((string)$tokens[1]);
+  $last = normalize_name_piece(implode(" ", array_slice($tokens, 2)));
+  return [$last, $first, $middle, $extension];
+}
+
+function format_record_name_for_panel(string $fullName): string {
+  [$last, $first, $middle, $extension] = split_record_name_parts($fullName);
+  if ($last === "" && $first === "") {
+    return normalize_name_piece($fullName);
+  }
+  $display = trim($last);
+  if ($first !== "") {
+    $display .= ($display !== "" ? ", " : "") . $first;
+  }
+  if ($middle !== "") {
+    $display .= " " . strtoupper(substr(trim($middle), 0, 1)) . ".";
+  }
+  if ($extension !== "") {
+    $display .= " " . $extension;
+  }
+  return trim($display);
+}
+
 $q = trim((string)($_GET["q"] ?? ""));
 $typeFilter = trim((string)($_GET["type"] ?? ""));
 $barangayFilter = effective_barangay_filter(trim((string)($_GET["barangay"] ?? "")));
+$municipalityFilter = trim((string)($_GET["municipality"] ?? ""));
 $sort = trim((string)($_GET["sort"] ?? "new"));
 $limit = (int)($_GET["limit"] ?? 0);
 $scopedOffice = current_scoped_office();
@@ -55,6 +142,8 @@ $allowedSorts = [
   "month_year_new" => "month_year DESC, record_date DESC, record_id DESC",
   "month_year_old" => "month_year ASC, record_date ASC, record_id ASC",
   "name" => "name ASC, record_id DESC",
+  "municipality_az" => "municipality ASC, record_id DESC",
+  "municipality_za" => "municipality DESC, record_id DESC",
   "type" => $typeSortExpr . " ASC, record_id DESC",
   "amount_desc" => "amount DESC, record_id DESC",
   "amount_asc" => "amount ASC, record_id DESC",
@@ -107,6 +196,12 @@ if ($barangayFilter !== "") {
   $params[] = $barangayFilter;
 }
 
+if ($municipalityFilter !== "") {
+  $where[] = "municipality = ?";
+  $paramTypes .= "s";
+  $params[] = $municipalityFilter;
+}
+
 $selectCols = "record_id, name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes";
 if ($isMaifDashboard) {
   $selectCols .= ", age, birthdate, contact_number, diagnosis, hospital, contact_person";
@@ -141,6 +236,7 @@ $result = $stmt->get_result();
 $items = [];
 while ($row = $result->fetch_assoc()) {
   $notesVal = (string)($row["notes"] ?? "");
+  $fullName = (string)($row["name"] ?? "");
   $spec = "";
   if ($hasTypeSpecify) {
     $spec = trim((string)($row["type_specify"] ?? ""));
@@ -155,7 +251,9 @@ while ($row = $result->fetch_assoc()) {
 
   $items[] = [
     "record_id" => (string)($row["record_id"] ?? ""),
-    "name" => (string)($row["name"] ?? ""),
+    "name" => $fullName,
+    "name_full" => $fullName,
+    "name_display" => format_record_name_for_panel($fullName),
     "type_label" => $typeLabel,
     "barangay" => (string)($row["barangay"] ?? ""),
     "office_display" => ((string)($row["office_scope"] ?? "")) === "maif" ? "MAIF" : ucfirst((string)($row["office_scope"] ?? "municipality")),

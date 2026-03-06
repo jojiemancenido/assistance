@@ -89,6 +89,74 @@ function with_status_message(string $url, string $status, string $message): stri
   return $url . $joiner . "status=" . urlencode($status) . "&msg=" . urlencode($message) . $fragment;
 }
 
+function normalize_name_piece(string $value): string {
+  $value = trim($value);
+  if ($value === "") return "";
+  $value = preg_replace('/\s+/u', ' ', $value);
+  return trim((string)$value);
+}
+
+function normalize_name_extension(string $value): string {
+  $clean = normalize_name_piece($value);
+  if ($clean === "") return "";
+  $key = strtoupper(str_replace(".", "", $clean));
+  $map = [
+    "JR" => "Jr.",
+    "SR" => "Sr.",
+    "II" => "II",
+    "III" => "III",
+    "IV" => "IV",
+    "V" => "V",
+    "VI" => "VI",
+  ];
+  return $map[$key] ?? $clean;
+}
+
+function split_extension_from_tokens(array $tokens): array {
+  if (empty($tokens)) return [$tokens, ""];
+  $lastToken = (string)($tokens[count($tokens) - 1] ?? "");
+  $normalized = normalize_name_extension($lastToken);
+  if ($normalized === "") return [$tokens, ""];
+  $key = strtoupper(str_replace(".", "", $lastToken));
+  $known = ["JR", "SR", "II", "III", "IV", "V", "VI"];
+  if (!in_array($key, $known, true)) {
+    return [$tokens, ""];
+  }
+  array_pop($tokens);
+  return [$tokens, $normalized];
+}
+
+function split_record_name_parts(string $fullName): array {
+  $fullName = trim((string)$fullName);
+  if ($fullName === "") return ["", "", "", ""];
+
+  if (str_contains($fullName, ",")) {
+    $chunks = explode(",", $fullName, 2);
+    $last = normalize_name_piece((string)($chunks[0] ?? ""));
+    $rest = normalize_name_piece((string)($chunks[1] ?? ""));
+    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+    [$tokens, $extension] = split_extension_from_tokens(is_array($tokens) ? $tokens : []);
+    $first = normalize_name_piece((string)($tokens[0] ?? ""));
+    $middle = "";
+    if (count($tokens) > 1) {
+      $middle = normalize_name_piece(implode(" ", array_slice($tokens, 1)));
+    }
+    return [$last, $first, $middle, $extension];
+  }
+
+  $tokens = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
+  $tokens = is_array($tokens) ? $tokens : [];
+  [$tokens, $extension] = split_extension_from_tokens($tokens);
+  if (count($tokens) === 0) return ["", "", "", $extension];
+  if (count($tokens) === 1) return ["", normalize_name_piece((string)$tokens[0]), "", $extension];
+  if (count($tokens) === 2) return [normalize_name_piece((string)$tokens[1]), normalize_name_piece((string)$tokens[0]), "", $extension];
+
+  $first = normalize_name_piece((string)$tokens[0]);
+  $middle = normalize_name_piece((string)$tokens[1]);
+  $last = normalize_name_piece(implode(" ", array_slice($tokens, 2)));
+  return [$last, $first, $middle, $extension];
+}
+
 $isSuperAdmin = is_super_admin();
 $scopedBarangay = current_scoped_barangay();
 $isBarangayScoped = ($scopedBarangay !== "");
@@ -152,6 +220,7 @@ if (!$row) {
 }
 
 $name = trim((string)($row["name"] ?? ""));
+[$lastName, $firstName, $middleName, $nameExtension] = split_record_name_parts($name);
 $type = trim((string)($row["type"] ?? ""));
 $barangay = trim((string)($row["barangay"] ?? ""));
 $amount = (string)($row["amount"] ?? "");
@@ -245,8 +314,23 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
 
           <div class="form-grid">
             <div class="field">
-              <label for="name">Name</label>
-              <input id="name" type="text" name="name" required value="<?php echo htmlspecialchars($name); ?>" />
+              <label for="last_name">Last Name</label>
+              <input id="last_name" type="text" name="last_name" required value="<?php echo htmlspecialchars($lastName); ?>" />
+            </div>
+
+            <div class="field">
+              <label for="first_name">First Name</label>
+              <input id="first_name" type="text" name="first_name" required value="<?php echo htmlspecialchars($firstName); ?>" />
+            </div>
+
+            <div class="field">
+              <label for="middle_name">Middle Name</label>
+              <input id="middle_name" type="text" name="middle_name" required value="<?php echo htmlspecialchars($middleName); ?>" />
+            </div>
+
+            <div class="field">
+              <label for="name_extension">Extension (optional)</label>
+              <input id="name_extension" type="text" name="name_extension" value="<?php echo htmlspecialchars($nameExtension); ?>" />
             </div>
 
             <div class="field">

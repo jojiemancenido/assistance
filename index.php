@@ -72,10 +72,97 @@ function build_type_label(string $type, string $spec): string {
   return $type;
 }
 
+function normalize_name_piece(string $value): string {
+  $value = trim($value);
+  if ($value === "") return "";
+  $value = preg_replace('/\s+/u', ' ', $value);
+  return trim((string)$value);
+}
+
+function normalize_name_extension(string $value): string {
+  $clean = normalize_name_piece($value);
+  if ($clean === "") return "";
+  $key = strtoupper(str_replace(".", "", $clean));
+  $map = [
+    "JR" => "Jr.",
+    "SR" => "Sr.",
+    "II" => "II",
+    "III" => "III",
+    "IV" => "IV",
+    "V" => "V",
+    "VI" => "VI",
+  ];
+  return $map[$key] ?? $clean;
+}
+
+function split_extension_from_tokens(array $tokens): array {
+  if (empty($tokens)) return [$tokens, ""];
+  $lastToken = (string)($tokens[count($tokens) - 1] ?? "");
+  $normalized = normalize_name_extension($lastToken);
+  if ($normalized === "") return [$tokens, ""];
+  $key = strtoupper(str_replace(".", "", $lastToken));
+  $known = ["JR", "SR", "II", "III", "IV", "V", "VI"];
+  if (!in_array($key, $known, true)) {
+    return [$tokens, ""];
+  }
+  array_pop($tokens);
+  return [$tokens, $normalized];
+}
+
+function split_record_name_parts(string $fullName): array {
+  $fullName = trim((string)$fullName);
+  if ($fullName === "") return ["", "", "", ""];
+
+  if (str_contains($fullName, ",")) {
+    $chunks = explode(",", $fullName, 2);
+    $last = normalize_name_piece((string)($chunks[0] ?? ""));
+    $rest = normalize_name_piece((string)($chunks[1] ?? ""));
+    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+    [$tokens, $extension] = split_extension_from_tokens(is_array($tokens) ? $tokens : []);
+    $first = normalize_name_piece((string)($tokens[0] ?? ""));
+    $middle = "";
+    if (count($tokens) > 1) {
+      $middle = normalize_name_piece(implode(" ", array_slice($tokens, 1)));
+    }
+    return [$last, $first, $middle, $extension];
+  }
+
+  $tokens = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
+  $tokens = is_array($tokens) ? $tokens : [];
+  [$tokens, $extension] = split_extension_from_tokens($tokens);
+  if (count($tokens) === 0) return ["", "", "", $extension];
+  if (count($tokens) === 1) return ["", normalize_name_piece((string)$tokens[0]), "", $extension];
+  if (count($tokens) === 2) return [normalize_name_piece((string)$tokens[1]), normalize_name_piece((string)$tokens[0]), "", $extension];
+
+  $first = normalize_name_piece((string)$tokens[0]);
+  $middle = normalize_name_piece((string)$tokens[1]);
+  $last = normalize_name_piece(implode(" ", array_slice($tokens, 2)));
+  return [$last, $first, $middle, $extension];
+}
+
+function format_record_name_for_panel(string $fullName): string {
+  [$last, $first, $middle, $extension] = split_record_name_parts($fullName);
+  if ($last === "" && $first === "") {
+    return normalize_name_piece($fullName);
+  }
+  $display = trim($last);
+  if ($first !== "") {
+    $display .= ($display !== "" ? ", " : "") . $first;
+  }
+  if ($middle !== "") {
+    $display .= " " . strtoupper(substr(trim($middle), 0, 1)) . ".";
+  }
+  if ($extension !== "") {
+    $display .= " " . $extension;
+  }
+  return trim($display);
+}
+
 $today = date("Y-m-d");
 $q = trim($_GET["q"] ?? "");
 $typeFilter = trim($_GET["type"] ?? "");
 $barangayFilter = effective_barangay_filter(trim($_GET["barangay"] ?? ""));
+$municipalityFilter = trim((string)($_GET["municipality"] ?? ""));
 $sort = trim($_GET["sort"] ?? "new");
 $status = trim($_GET["status"] ?? "");
 $msg = trim($_GET["msg"] ?? "");
@@ -90,6 +177,26 @@ $isMaifDashboard = is_maif_office_scope($scopedOffice);
 $types = $isMaifDashboard ? ["Medical"] : $baseTypes;
 $visibleBarangays = $isBarangayScoped ? [$scopedBarangay] : $barangays;
 $maifMunicipalities = maif_municipality_choices();
+$camNorteMunicipalities = [
+  "Basud",
+  "Capalonga",
+  "Daet",
+  "Jose Panganiban",
+  "Labo",
+  "Mercedes",
+  "Paracale",
+  "San Lorenzo Ruiz",
+  "San Vicente",
+  "Santa Elena",
+  "Talisay",
+  "Vinzons",
+];
+$recordsMunicipalityChoices = array_values(array_unique(array_merge($camNorteMunicipalities, $maifMunicipalities, ["Daet"])));
+natcasesort($recordsMunicipalityChoices);
+$recordsMunicipalityChoices = array_values($recordsMunicipalityChoices);
+if ($municipalityFilter !== "" && !in_array($municipalityFilter, $recordsMunicipalityChoices, true)) {
+  $recordsMunicipalityChoices[] = $municipalityFilter;
+}
 $defaultMaifMunicipality = !empty($maifMunicipalities) ? (string)$maifMunicipalities[0] : "Daet";
 $duplicateWarning = (isset($_GET["duplicate_warning"]) && $_GET["duplicate_warning"] === "1");
 $duplicateCount = max(0, (int)($_GET["duplicate_count"] ?? 0));
@@ -109,6 +216,20 @@ if (is_array($duplicateSession)) {
   $duplicateYear = trim((string)($duplicateSession["year"] ?? ""));
 }
 $formName = trim((string)($draftSession["name"] ?? ""));
+$formLastName = trim((string)($draftSession["last_name"] ?? ""));
+$formFirstName = trim((string)($draftSession["first_name"] ?? ""));
+$formMiddleName = trim((string)($draftSession["middle_name"] ?? ""));
+if (($formLastName === "" || $formFirstName === "" || $formMiddleName === "") && $formName !== "") {
+  [$legacyLast, $legacyFirst, $legacyMiddle] = split_record_name_parts($formName);
+  if ($formLastName === "") $formLastName = $legacyLast;
+  if ($formFirstName === "") $formFirstName = $legacyFirst;
+  if ($formMiddleName === "") $formMiddleName = $legacyMiddle;
+}
+$formNameExtension = trim((string)($draftSession["name_extension"] ?? ""));
+if ($formNameExtension === "" && $formName !== "") {
+  [, , , $legacyExtension] = split_record_name_parts($formName);
+  $formNameExtension = $legacyExtension;
+}
 $formType = trim((string)($draftSession["type"] ?? ""));
 $formTypeSpecify = trim((string)($draftSession["type_specify"] ?? ""));
 $formAmount = trim((string)($draftSession["amount"] ?? ""));
@@ -336,6 +457,8 @@ $allowedSorts = [
   "month_year_new" => "month_year DESC, record_date DESC, record_id DESC",
   "month_year_old" => "month_year ASC, record_date ASC, record_id ASC",
   "name" => "name ASC, record_id DESC",
+  "municipality_az" => "municipality ASC, record_id DESC",
+  "municipality_za" => "municipality DESC, record_id DESC",
   "type" => $typeSortExpr . " ASC, record_id DESC",
   "amount_desc" => "amount DESC, record_id DESC",
   "amount_asc" => "amount ASC, record_id DESC",
@@ -392,6 +515,12 @@ if ($barangayFilter !== "") {
   $params[] = $barangayFilter;
 }
 
+if ($municipalityFilter !== "") {
+  $where[] = "municipality = ?";
+  $paramTypes .= "s";
+  $params[] = $municipalityFilter;
+}
+
 $selectCols = "record_id, name, type, barangay, office_scope, municipality, province, amount, record_date, month_year, notes";
 if ($isMaifDashboard) {
   $selectCols .= ", age, birthdate, contact_number, diagnosis, hospital, contact_person";
@@ -423,6 +552,7 @@ $baseQuery = [
   "q" => $q,
   "type" => $typeFilter,
   "barangay" => $barangayFilter,
+  "municipality" => $municipalityFilter,
   "sort" => $sort,
 ];
 $editReturnToQuery = build_query($baseQuery);
@@ -601,8 +731,23 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
             <div class="form-grid">
 
               <div class="field">
-                <label for="name">Name</label>
-                <input id="name" type="text" name="name" required placeholder="e.g., Juan Dela Cruz" value="<?php echo htmlspecialchars($formName); ?>" />
+                <label for="last_name">Last Name</label>
+                <input id="last_name" type="text" name="last_name" required placeholder="e.g., Dela Cruz" value="<?php echo htmlspecialchars($formLastName); ?>" />
+              </div>
+
+              <div class="field">
+                <label for="first_name">First Name</label>
+                <input id="first_name" type="text" name="first_name" required placeholder="e.g., Juan" value="<?php echo htmlspecialchars($formFirstName); ?>" />
+              </div>
+
+              <div class="field">
+                <label for="middle_name">Middle Name</label>
+                <input id="middle_name" type="text" name="middle_name" required placeholder="e.g., Santos" value="<?php echo htmlspecialchars($formMiddleName); ?>" />
+              </div>
+
+              <div class="field">
+                <label for="name_extension">Extension (optional)</label>
+                <input id="name_extension" type="text" name="name_extension" placeholder="e.g., Jr., Sr., III" value="<?php echo htmlspecialchars($formNameExtension); ?>" />
               </div>
 
               <div class="field">
@@ -932,7 +1077,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
             </form>
           </div>
           <p id="records-subtitle" class="card__sub">
-            <?php if ($q !== "" || $typeFilter !== "" || $barangayFilter !== ""): ?>
+            <?php if ($q !== "" || $typeFilter !== "" || $barangayFilter !== "" || $municipalityFilter !== ""): ?>
               Showing all matching results.
             <?php else: ?>
               Showing all saved entries.
@@ -944,9 +1089,10 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
           <input id="live-search-input" type="text" name="q" value="<?php echo htmlspecialchars($q); ?>" placeholder="Search name, barangay, municipality, office..." autocomplete="off" />
           <input type="hidden" name="type" value="<?php echo htmlspecialchars($typeFilter); ?>" />
           <input type="hidden" name="barangay" value="<?php echo htmlspecialchars($barangayFilter); ?>" />
+          <input type="hidden" name="municipality" value="<?php echo htmlspecialchars($municipalityFilter); ?>" />
           <input type="hidden" name="sort" value="<?php echo htmlspecialchars($sort); ?>" />
           <button class="btn btn--sm" type="submit">Search</button>
-          <?php if ($q !== "" || $typeFilter !== "" || $barangayFilter !== "" || $sort !== "new"): ?>
+          <?php if ($q !== "" || $typeFilter !== "" || $barangayFilter !== "" || $municipalityFilter !== "" || $sort !== "new"): ?>
             <a class="btn btn--secondary btn--sm" href="index.php#records-section">Clear</a>
           <?php endif; ?>
         </form>
@@ -1004,7 +1150,22 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
                       <?php endif; ?>
                     </span>
                   </th>
-                  <th>Municipality</th>
+                  <th>
+                    <span class="th-with-menu">
+                      <span>Municipality</span>
+                      <details class="th-menu">
+                        <summary class="th-menu__summary" aria-label="Municipality sort and filter"></summary>
+                        <div class="th-menu__list">
+                          <a href="index.php?<?php echo build_query($baseQuery, ["sort" => "municipality_az"]); ?>#records-section">Sort A to Z</a>
+                          <a href="index.php?<?php echo build_query($baseQuery, ["sort" => "municipality_za"]); ?>#records-section">Sort Z to A</a>
+                          <a href="index.php?<?php echo build_query($baseQuery, ["municipality" => ""]); ?>#records-section">All Municipalities</a>
+                          <?php foreach ($recordsMunicipalityChoices as $municipalityName): ?>
+                            <a href="index.php?<?php echo build_query($baseQuery, ["municipality" => $municipalityName]); ?>#records-section"><?php echo htmlspecialchars($municipalityName); ?></a>
+                          <?php endforeach; ?>
+                        </div>
+                      </details>
+                    </span>
+                  </th>
                   <th>Province</th>
                   <?php if ($isMaifDashboard): ?>
                     <th>Age</th>
@@ -1078,6 +1239,8 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
                   <?php while($r = $records->fetch_assoc()): ?>
                     <?php
                       $notesVal = (string)($r["notes"] ?? "");
+                      $fullName = (string)($r["name"] ?? "");
+                      $displayName = format_record_name_for_panel($fullName);
                       $spec = "";
                       if ($hasTypeSpecify) {
                         $spec = trim((string)($r["type_specify"] ?? ""));
@@ -1092,7 +1255,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
                     ?>
                     <tr>
                       <td class="mono"><?php echo htmlspecialchars($r["record_id"]); ?></td>
-                      <td class="strong"><?php echo htmlspecialchars($r["name"]); ?></td>
+                      <td class="strong"><?php echo htmlspecialchars($displayName); ?></td>
                       <td><?php echo htmlspecialchars($typeLabel); ?></td>
                       <td><?php echo htmlspecialchars($r["barangay"] ?? ""); ?></td>
                       <td><?php echo htmlspecialchars((string)($r["municipality"] ?? "")); ?></td>
@@ -1115,7 +1278,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
                             type="button"
                             class="btn btn--secondary btn--sm record-view-btn"
                             data-record-id="<?php echo htmlspecialchars((string)$r["record_id"], ENT_QUOTES); ?>"
-                            data-record-name="<?php echo htmlspecialchars((string)$r["name"], ENT_QUOTES); ?>"
+                            data-record-name="<?php echo htmlspecialchars($fullName, ENT_QUOTES); ?>"
                             data-record-type="<?php echo htmlspecialchars($typeLabel, ENT_QUOTES); ?>"
                             data-record-barangay="<?php echo htmlspecialchars((string)($r["barangay"] ?? ""), ENT_QUOTES); ?>"
                             data-record-office="<?php echo htmlspecialchars(((string)($r["office_scope"] ?? "")) === "maif" ? "MAIF" : ucfirst((string)($r["office_scope"] ?? "municipality")), ENT_QUOTES); ?>"
@@ -1727,6 +1890,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
       const initialSubtitle = subtitle ? subtitle.textContent : '';
       const typeInput = searchForm.querySelector('input[name="type"]');
       const barangayInput = searchForm.querySelector('input[name="barangay"]');
+      const municipalityInput = searchForm.querySelector('input[name="municipality"]');
       const sortInput = searchForm.querySelector('input[name="sort"]');
 
       let debounceTimer = null;
@@ -1750,6 +1914,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
         params.set('limit', '<?php echo (int)$limit; ?>');
         if (typeInput && typeInput.value !== '') params.set('type', typeInput.value);
         if (barangayInput && barangayInput.value !== '') params.set('barangay', barangayInput.value);
+        if (municipalityInput && municipalityInput.value !== '') params.set('municipality', municipalityInput.value);
         if (sortInput && sortInput.value !== '') params.set('sort', sortInput.value);
         params.set('_ts', String(Date.now()));
         return params;
@@ -1758,7 +1923,8 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
       function buildSubtitleForCount(count, query){
         const hasFilter =
           (typeInput && typeInput.value !== '') ||
-          (barangayInput && barangayInput.value !== '');
+          (barangayInput && barangayInput.value !== '') ||
+          (municipalityInput && municipalityInput.value !== '');
 
         if (query !== '') {
           return 'Live results: ' + count + ' for "' + query + '".';
@@ -1787,7 +1953,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
             '&popup=1';
           const viewAttrs =
             ' data-record-id="' + escapeHtml(row.record_id) + '"' +
-            ' data-record-name="' + escapeHtml(row.name) + '"' +
+            ' data-record-name="' + escapeHtml(row.name_full || row.name || '') + '"' +
             ' data-record-type="' + escapeHtml(row.type_label) + '"' +
             ' data-record-barangay="' + escapeHtml(row.barangay) + '"' +
             ' data-record-office="' + escapeHtml(row.office_display) + '"' +
@@ -1814,7 +1980,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
 
           return '<tr>' +
             '<td class="mono">' + escapeHtml(row.record_id) + '</td>' +
-            '<td class="strong">' + escapeHtml(row.name) + '</td>' +
+            '<td class="strong">' + escapeHtml(row.name_display || row.name || '') + '</td>' +
             '<td>' + escapeHtml(row.type_label) + '</td>' +
             '<td>' + escapeHtml(row.barangay) + '</td>' +
             '<td>' + escapeHtml(row.municipality) + '</td>' +
@@ -1845,6 +2011,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
         const query = params.get('q') || '';
         const typeValue = params.get('type') || '';
         const barangayValue = params.get('barangay') || '';
+        const municipalityValue = params.get('municipality') || '';
         const sortValue = params.get('sort') || '';
         const currentRequest = ++requestId;
 
@@ -1875,6 +2042,7 @@ $editReturnTo = "index.php" . ($editReturnToQuery !== "" ? ("?" . $editReturnToQ
             q: query,
             type: typeValue,
             barangay: barangayValue,
+            municipality: municipalityValue,
             sort: sortValue,
             items: data.items
           });

@@ -31,6 +31,92 @@ function build_type_label(string $type, string $spec): string {
   return $type;
 }
 
+function normalize_name_piece(string $value): string {
+  $value = trim($value);
+  if ($value === "") return "";
+  $value = preg_replace('/\s+/u', ' ', $value);
+  return trim((string)$value);
+}
+
+function normalize_name_extension(string $value): string {
+  $clean = normalize_name_piece($value);
+  if ($clean === "") return "";
+  $key = strtoupper(str_replace(".", "", $clean));
+  $map = [
+    "JR" => "Jr.",
+    "SR" => "Sr.",
+    "II" => "II",
+    "III" => "III",
+    "IV" => "IV",
+    "V" => "V",
+    "VI" => "VI",
+  ];
+  return $map[$key] ?? $clean;
+}
+
+function split_extension_from_tokens(array $tokens): array {
+  if (empty($tokens)) return [$tokens, ""];
+  $lastToken = (string)($tokens[count($tokens) - 1] ?? "");
+  $normalized = normalize_name_extension($lastToken);
+  if ($normalized === "") return [$tokens, ""];
+  $key = strtoupper(str_replace(".", "", $lastToken));
+  $known = ["JR", "SR", "II", "III", "IV", "V", "VI"];
+  if (!in_array($key, $known, true)) {
+    return [$tokens, ""];
+  }
+  array_pop($tokens);
+  return [$tokens, $normalized];
+}
+
+function split_record_name_parts(string $fullName): array {
+  $fullName = trim((string)$fullName);
+  if ($fullName === "") return ["", "", "", ""];
+
+  if (str_contains($fullName, ",")) {
+    $chunks = explode(",", $fullName, 2);
+    $last = normalize_name_piece((string)($chunks[0] ?? ""));
+    $rest = normalize_name_piece((string)($chunks[1] ?? ""));
+    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+    [$tokens, $extension] = split_extension_from_tokens(is_array($tokens) ? $tokens : []);
+    $first = normalize_name_piece((string)($tokens[0] ?? ""));
+    $middle = "";
+    if (count($tokens) > 1) {
+      $middle = normalize_name_piece(implode(" ", array_slice($tokens, 1)));
+    }
+    return [$last, $first, $middle, $extension];
+  }
+
+  $tokens = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
+  $tokens = is_array($tokens) ? $tokens : [];
+  [$tokens, $extension] = split_extension_from_tokens($tokens);
+  if (count($tokens) === 0) return ["", "", "", $extension];
+  if (count($tokens) === 1) return ["", normalize_name_piece((string)$tokens[0]), "", $extension];
+  if (count($tokens) === 2) return [normalize_name_piece((string)$tokens[1]), normalize_name_piece((string)$tokens[0]), "", $extension];
+
+  $first = normalize_name_piece((string)$tokens[0]);
+  $middle = normalize_name_piece((string)$tokens[1]);
+  $last = normalize_name_piece(implode(" ", array_slice($tokens, 2)));
+  return [$last, $first, $middle, $extension];
+}
+
+function format_record_name_for_panel(string $fullName): string {
+  [$last, $first, $middle, $extension] = split_record_name_parts($fullName);
+  if ($last === "" && $first === "") {
+    return normalize_name_piece($fullName);
+  }
+  $display = trim($last);
+  if ($first !== "") {
+    $display .= ($display !== "" ? ", " : "") . $first;
+  }
+  if ($middle !== "") {
+    $display .= " " . strtoupper(substr(trim($middle), 0, 1)) . ".";
+  }
+  if ($extension !== "") {
+    $display .= " " . $extension;
+  }
+  return trim($display);
+}
+
 $q = trim((string)($_GET["q"] ?? ""));
 $typeFilter = trim((string)($_GET["type"] ?? ""));
 $sort = trim((string)($_GET["sort"] ?? "new"));
@@ -258,6 +344,7 @@ $recordCount = ($records && method_exists($records, 'num_rows')) ? (int)$records
                   <?php while ($r = $records->fetch_assoc()): ?>
                     <?php
                       $notesVal = (string)($r["notes"] ?? "");
+                      $displayName = format_record_name_for_panel((string)($r["name"] ?? ""));
                       $spec = "";
                       if ($hasTypeSpecify) {
                         $spec = trim((string)($r["type_specify"] ?? ""));
@@ -271,7 +358,7 @@ $recordCount = ($records && method_exists($records, 'num_rows')) ? (int)$records
                     ?>
                     <tr>
                       <td class="mono"><?php echo htmlspecialchars((string)$r["record_id"]); ?></td>
-                      <td class="strong"><?php echo htmlspecialchars((string)$r["name"]); ?></td>
+                      <td class="strong"><?php echo htmlspecialchars($displayName); ?></td>
                       <td><?php echo htmlspecialchars($typeLabel); ?></td>
                       <td><?php echo htmlspecialchars((string)($r["barangay"] ?? "")); ?></td>
                       <td class="mono">PHP <?php echo number_format((float)$r["amount"], 2); ?></td>

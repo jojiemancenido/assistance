@@ -51,6 +51,89 @@ function with_status_message(string $url, string $status, string $message): stri
   return $url . $joiner . "status=" . urlencode($status) . "&msg=" . urlencode($message) . $fragment;
 }
 
+function normalize_name_piece(string $value): string {
+  $value = trim($value);
+  if ($value === "") return "";
+  $value = preg_replace('/\s+/u', ' ', $value);
+  return trim((string)$value);
+}
+
+function normalize_name_extension(string $value): string {
+  $clean = normalize_name_piece($value);
+  if ($clean === "") return "";
+  $key = strtoupper(str_replace(".", "", $clean));
+  $map = [
+    "JR" => "Jr.",
+    "SR" => "Sr.",
+    "II" => "II",
+    "III" => "III",
+    "IV" => "IV",
+    "V" => "V",
+    "VI" => "VI",
+  ];
+  return $map[$key] ?? $clean;
+}
+
+function split_extension_from_tokens(array $tokens): array {
+  if (empty($tokens)) return [$tokens, ""];
+  $lastToken = (string)($tokens[count($tokens) - 1] ?? "");
+  $normalized = normalize_name_extension($lastToken);
+  if ($normalized === "") return [$tokens, ""];
+  $key = strtoupper(str_replace(".", "", $lastToken));
+  $known = ["JR", "SR", "II", "III", "IV", "V", "VI"];
+  if (!in_array($key, $known, true)) {
+    return [$tokens, ""];
+  }
+  array_pop($tokens);
+  return [$tokens, $normalized];
+}
+
+function split_record_name_parts(string $fullName): array {
+  $fullName = trim((string)$fullName);
+  if ($fullName === "") return ["", "", "", ""];
+
+  if (str_contains($fullName, ",")) {
+    $chunks = explode(",", $fullName, 2);
+    $last = normalize_name_piece((string)($chunks[0] ?? ""));
+    $rest = normalize_name_piece((string)($chunks[1] ?? ""));
+    $tokens = preg_split('/\s+/u', $rest, -1, PREG_SPLIT_NO_EMPTY);
+    [$tokens, $extension] = split_extension_from_tokens(is_array($tokens) ? $tokens : []);
+    $first = normalize_name_piece((string)($tokens[0] ?? ""));
+    $middle = "";
+    if (count($tokens) > 1) {
+      $middle = normalize_name_piece(implode(" ", array_slice($tokens, 1)));
+    }
+    return [$last, $first, $middle, $extension];
+  }
+
+  $tokens = preg_split('/\s+/u', $fullName, -1, PREG_SPLIT_NO_EMPTY);
+  $tokens = is_array($tokens) ? $tokens : [];
+  [$tokens, $extension] = split_extension_from_tokens($tokens);
+  if (count($tokens) === 0) return ["", "", "", $extension];
+  if (count($tokens) === 1) return ["", normalize_name_piece((string)$tokens[0]), "", $extension];
+  if (count($tokens) === 2) return [normalize_name_piece((string)$tokens[1]), normalize_name_piece((string)$tokens[0]), "", $extension];
+
+  $first = normalize_name_piece((string)$tokens[0]);
+  $middle = normalize_name_piece((string)$tokens[1]);
+  $last = normalize_name_piece(implode(" ", array_slice($tokens, 2)));
+  return [$last, $first, $middle, $extension];
+}
+
+function build_record_name_for_storage(string $last, string $first, string $middle, string $extension): string {
+  $last = normalize_name_piece($last);
+  $first = normalize_name_piece($first);
+  $middle = normalize_name_piece($middle);
+  $extension = normalize_name_extension($extension);
+  $full = $last . ", " . $first;
+  if ($middle !== "") {
+    $full .= " " . $middle;
+  }
+  if ($extension !== "") {
+    $full .= " " . $extension;
+  }
+  return trim($full);
+}
+
 function redirect_edit(int $recordId, string $status, string $message, string $returnTo, bool $isPopup = false, bool $closeAfter = false): void {
   $url = "edit.php?record_id=" . urlencode((string)$recordId) .
     "&return_to=" . urlencode($returnTo) .
@@ -67,7 +150,19 @@ function redirect_edit(int $recordId, string $status, string $message, string $r
 }
 
 $recordId = (int)($_POST["record_id"] ?? 0);
-$name = trim((string)($_POST["name"] ?? ""));
+$lastName = normalize_name_piece((string)($_POST["last_name"] ?? ""));
+$firstName = normalize_name_piece((string)($_POST["first_name"] ?? ""));
+$middleName = normalize_name_piece((string)($_POST["middle_name"] ?? ""));
+$nameExtension = normalize_name_extension((string)($_POST["name_extension"] ?? ""));
+$legacyNameRaw = normalize_name_piece((string)($_POST["name"] ?? ""));
+if (($lastName === "" || $firstName === "" || $middleName === "") && $legacyNameRaw !== "") {
+  [$legacyLast, $legacyFirst, $legacyMiddle, $legacyExtension] = split_record_name_parts($legacyNameRaw);
+  if ($lastName === "") $lastName = $legacyLast;
+  if ($firstName === "") $firstName = $legacyFirst;
+  if ($middleName === "") $middleName = $legacyMiddle;
+  if ($nameExtension === "") $nameExtension = $legacyExtension;
+}
+$name = build_record_name_for_storage($lastName, $firstName, $middleName, $nameExtension);
 $type = trim((string)($_POST["type"] ?? ""));
 $typeSpecify = trim((string)($_POST["type_specify"] ?? ""));
 $barangay = trim((string)($_POST["barangay"] ?? ""));
@@ -101,6 +196,10 @@ if ($recordId <= 0) {
 
 if (!verify_csrf_token($csrfToken)) {
   redirect_edit($recordId, "error", "Invalid request token. Please refresh and try again.", $returnTo, $isPopup);
+}
+
+if ($lastName === "" || $firstName === "" || $middleName === "") {
+  redirect_edit($recordId, "error", "Please provide Last Name, First Name, and Middle Name.", $returnTo, $isPopup);
 }
 
 if ($name === "" || $barangay === "" || $amountRaw === "" || !is_numeric($amountRaw)) {
