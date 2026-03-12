@@ -231,13 +231,16 @@ if ($recordOfficeScope === "") {
   $recordOfficeScope = "municipality";
 }
 $isMaifRecord = is_maif_office_scope($recordOfficeScope);
-$types = $isMaifRecord ? ["Medical"] : $baseTypes;
+$isBorabodRecord = ($recordOfficeScope === "borabod");
+$canUseMaifType = (!$isMaifRecord && $isBorabodRecord);
+$isMaifStyleRecord = $isMaifRecord || ($canUseMaifType && strcasecmp($type, "MAIF") === 0);
+$types = $isMaifRecord ? ["Medical"] : ($canUseMaifType ? ["Medical", "MAIF", "Burial", "Livelihood", "Other"] : $baseTypes);
 $maifMunicipalities = maif_municipality_choices();
 $defaultMaifMunicipality = !empty($maifMunicipalities) ? (string)$maifMunicipalities[0] : "Daet";
-$municipality = $isMaifRecord
+$municipality = $isMaifStyleRecord
   ? normalize_maif_municipality((string)($row["municipality"] ?? ""))
   : trim((string)($row["municipality"] ?? "Daet"));
-if ($isMaifRecord && $municipality === "") {
+if ($isMaifStyleRecord && $municipality === "") {
   $municipality = $defaultMaifMunicipality;
 }
 $province = trim((string)($row["province"] ?? "Camarines Norte"));
@@ -247,7 +250,7 @@ $contactNumber = trim((string)($row["contact_number"] ?? ""));
 $diagnosis = trim((string)($row["diagnosis"] ?? ""));
 $hospital = trim((string)($row["hospital"] ?? ""));
 $contactPerson = trim((string)($row["contact_person"] ?? ""));
-$maifBarangaySuggestions = $isMaifRecord ? maif_designated_barangay_suggestions($municipality) : [];
+$maifBarangaySuggestions = $isMaifStyleRecord ? maif_designated_barangay_suggestions($municipality) : [];
 $typeSpecify = "";
 
 if ($hasTypeSpecify) {
@@ -369,19 +372,28 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
             </div>
 
             <div class="field field--full">
-              <label for="barangay"><?php echo $isMaifRecord ? "Designated Barangay" : "Barangay"; ?></label>
-              <?php if ($isMaifRecord): ?>
-                <select id="barangay" name="barangay" required>
-                  <option value="" disabled <?php echo ($barangay === "") ? "selected" : ""; ?>>Select designated barangay</option>
-                  <?php foreach ($maifBarangaySuggestions as $maifBarangay): ?>
-                    <option value="<?php echo htmlspecialchars($maifBarangay); ?>" <?php echo ($barangay === $maifBarangay) ? "selected" : ""; ?>>
-                      <?php echo htmlspecialchars($maifBarangay); ?>
-                    </option>
-                  <?php endforeach; ?>
-                </select>
-              <?php elseif ($isBarangayScoped): ?>
+              <label for="barangay" id="barangay-label"><?php echo $isMaifStyleRecord ? "Designated Barangay" : "Barangay"; ?></label>
+              <?php if ($isBarangayScoped): ?>
                 <input id="barangay" class="readonly" type="text" value="<?php echo htmlspecialchars($scopedBarangay); ?>" readonly />
                 <input type="hidden" name="barangay" value="<?php echo htmlspecialchars($scopedBarangay); ?>" />
+              <?php elseif ($isMaifRecord || $canUseMaifType): ?>
+                <select id="barangay" name="barangay" required>
+                  <?php if ($isMaifStyleRecord): ?>
+                    <option value="" disabled <?php echo ($barangay === "") ? "selected" : ""; ?>>Select designated barangay</option>
+                    <?php foreach ($maifBarangaySuggestions as $maifBarangay): ?>
+                      <option value="<?php echo htmlspecialchars($maifBarangay); ?>" <?php echo ($barangay === $maifBarangay) ? "selected" : ""; ?>>
+                        <?php echo htmlspecialchars($maifBarangay); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  <?php else: ?>
+                    <option value="" disabled <?php echo $barangay === "" ? "selected" : ""; ?>>Select barangay</option>
+                    <?php foreach ($visibleBarangays as $b): ?>
+                      <option value="<?php echo htmlspecialchars($b); ?>" <?php echo $barangay === $b ? "selected" : ""; ?>>
+                        <?php echo htmlspecialchars($b); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+                </select>
               <?php else: ?>
                 <select id="barangay" name="barangay" required>
                   <option value="" disabled <?php echo $barangay === "" ? "selected" : ""; ?>>Select barangay</option>
@@ -394,10 +406,11 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
               <?php endif; ?>
             </div>
 
-            <?php if ($isMaifRecord): ?>
+            <?php if ($isMaifRecord || $canUseMaifType): ?>
+              <div class="form-grid <?php echo $isMaifStyleRecord ? "" : "hidden"; ?>" id="maif-fields-wrap">
               <div class="field">
                 <label for="municipality">Municipality</label>
-                <select id="municipality" name="municipality" required>
+                <select id="municipality" name="municipality" <?php echo $isMaifStyleRecord ? "required" : ""; ?>>
                   <?php foreach ($maifMunicipalities as $maifMunicipality): ?>
                     <option value="<?php echo htmlspecialchars($maifMunicipality); ?>" <?php echo $municipality === $maifMunicipality ? "selected" : ""; ?>>
                       <?php echo htmlspecialchars($maifMunicipality); ?>
@@ -435,7 +448,11 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
                 <label for="contact_person">Contact Person (if applicable)</label>
                 <input id="contact_person" type="text" name="contact_person" value="<?php echo htmlspecialchars($contactPerson); ?>" />
               </div>
-            <?php else: ?>
+              </div>
+            <?php endif; ?>
+
+            <?php if (!$isMaifRecord): ?>
+              <div class="form-grid <?php echo $isMaifStyleRecord ? "hidden" : ""; ?>" id="standard-location-fields">
               <div class="field">
                 <label>Municipality</label>
                 <input class="readonly" type="text" value="<?php echo htmlspecialchars($municipality !== "" ? $municipality : "Daet"); ?>" readonly />
@@ -444,6 +461,7 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
               <div class="field">
                 <label>Province</label>
                 <input class="readonly" type="text" value="<?php echo htmlspecialchars($province !== "" ? $province : "Camarines Norte"); ?>" readonly />
+              </div>
               </div>
             <?php endif; ?>
 
@@ -496,19 +514,46 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
   </script>
   <script>
     (function(){
+      const typeSel = document.getElementById('type');
+      const wrap = document.getElementById('typeSpecifyWrap');
+      const input = document.getElementById('type_specify');
       const municipality = document.getElementById('municipality');
       const barangaySelect = document.getElementById('barangay');
-      if (!municipality || !barangaySelect) return;
-
+      const barangayLabel = document.getElementById('barangay-label');
+      const maifFieldsWrap = document.getElementById('maif-fields-wrap');
+      const standardLocationFields = document.getElementById('standard-location-fields');
+      const fixedMaifRecord = <?php echo $isMaifRecord ? "true" : "false"; ?>;
+      const canUseMaifType = <?php echo $canUseMaifType ? "true" : "false"; ?>;
       const optionsByMunicipality = <?php echo json_encode(maif_barangay_options_by_municipality(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      const standardBarangays = <?php echo json_encode(array_values($visibleBarangays), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      let preferredBarangay = <?php echo json_encode($barangay, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+
+      function isMaifStyle(){
+        if (fixedMaifRecord) return true;
+        return canUseMaifType && !!typeSel && typeSel.value === 'MAIF';
+      }
+
+      function syncTypeSpecify(){
+        if (!wrap || !input || !typeSel) return;
+        const isOther = typeSel.value === 'Other';
+        wrap.classList.toggle('hidden', !isOther);
+        input.required = isOther;
+        if (!isOther) input.value = '';
+      }
 
       function syncBarangayOptions(){
-        const current = municipality.value;
-        const options = Array.isArray(optionsByMunicipality[current]) ? optionsByMunicipality[current] : [];
-        const previousValue = barangaySelect.value;
-        let html = '<option value="" disabled>Select designated barangay</option>';
+        if (!barangaySelect || barangaySelect.tagName !== 'SELECT') return;
 
-        if (options.length === 0) {
+        const maifStyle = isMaifStyle();
+        const currentMunicipality = municipality ? municipality.value : '';
+        const options = maifStyle
+          ? (Array.isArray(optionsByMunicipality[currentMunicipality]) ? optionsByMunicipality[currentMunicipality] : [])
+          : standardBarangays;
+        const previousValue = barangaySelect.value || preferredBarangay;
+        const placeholder = maifStyle ? 'Select designated barangay' : 'Select barangay';
+        let html = '<option value="" disabled>' + placeholder + '</option>';
+
+        if (maifStyle && options.length === 0) {
           html += '<option value="" disabled>No barangay list configured yet</option>';
         } else {
           html += options.map(function(option){
@@ -525,29 +570,46 @@ if ($barangay !== "" && !in_array($barangay, $barangays, true)) {
         barangaySelect.innerHTML = html;
         if (!options.includes(previousValue)) {
           barangaySelect.selectedIndex = 0;
+        } else {
+          barangaySelect.value = previousValue;
+        }
+
+        if (barangayLabel) {
+          barangayLabel.textContent = maifStyle ? 'Designated Barangay' : 'Barangay';
         }
       }
 
-      municipality.addEventListener('change', syncBarangayOptions);
-      syncBarangayOptions();
-    })();
-  </script>
-  <script>
-    (function(){
-      const typeSel = document.getElementById('type');
-      const wrap = document.getElementById('typeSpecifyWrap');
-      const input = document.getElementById('type_specify');
-      if (!typeSel || !wrap || !input) return;
-
-      function sync(){
-        const isOther = typeSel.value === 'Other';
-        wrap.classList.toggle('hidden', !isOther);
-        input.required = isOther;
-        if (!isOther) input.value = '';
+      function syncMaifFields(){
+        const maifStyle = isMaifStyle();
+        if (maifFieldsWrap) {
+          maifFieldsWrap.classList.toggle('hidden', !maifStyle);
+        }
+        if (standardLocationFields) {
+          standardLocationFields.classList.toggle('hidden', maifStyle);
+        }
+        if (municipality) {
+          municipality.required = maifStyle;
+        }
+        syncBarangayOptions();
       }
 
-      typeSel.addEventListener('change', sync);
-      sync();
+      if (typeSel) {
+        typeSel.addEventListener('change', function(){
+          syncTypeSpecify();
+          syncMaifFields();
+        });
+      }
+      if (municipality) {
+        municipality.addEventListener('change', syncBarangayOptions);
+      }
+      if (barangaySelect && barangaySelect.tagName === 'SELECT') {
+        barangaySelect.addEventListener('change', function(){
+          preferredBarangay = barangaySelect.value;
+        });
+      }
+
+      syncTypeSpecify();
+      syncMaifFields();
     })();
   </script>
 </body>

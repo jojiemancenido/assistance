@@ -1,9 +1,9 @@
 <?php
 // db.php (XAMPP defaults)
-$host = "localhost";
-$user = "root";
-$pass = "";
-$dbname = "simple_records";
+$host = "https://server400.web-hosting.com/";
+$user = "daetirbb";
+$pass = "panel_NameCh3ap2026";
+$dbname = "daetirbb_assistance_record";
 
 $conn = new mysqli($host, $user, $pass);
 

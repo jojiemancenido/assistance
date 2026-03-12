@@ -140,11 +140,11 @@ if ($scopedBarangay !== "") {
 $scopedOffice = current_scoped_office();
 $officeScope = ($scopedOffice !== "") ? $scopedOffice : "municipality";
 $isMaifOffice = is_maif_office_scope($officeScope);
+$isBorabodOffice = normalize_office_scope_name($officeScope) === "borabod";
+$postedMunicipality = trim((string)($_POST["municipality"] ?? ""));
 
 // Auto-set (don’t trust client)
-$municipality = $isMaifOffice
-  ? normalize_maif_municipality((string)($_POST["municipality"] ?? ""))
-  : "Daet";
+$municipality = "Daet";
 $province = "Camarines Norte";
 
 function has_column(mysqli $conn, string $table, string $column): bool {
@@ -182,6 +182,16 @@ if ($isMaifOffice) {
   $type_specify = "";
 }
 
+if (!$isMaifOffice && strcasecmp($type, "MAIF") === 0 && !$isBorabodOffice) {
+  redirect_with_msg("error", "MAIF assistance type is only available in the Borabod office.");
+  exit;
+}
+
+$isMaifStyleEntry = $isMaifOffice || ($isBorabodOffice && strcasecmp($type, "MAIF") === 0);
+$municipality = $isMaifStyleEntry
+  ? normalize_maif_municipality($postedMunicipality)
+  : "Daet";
+
 if ($lastName === "" || $firstName === "" || $middleName === "") {
   redirect_with_msg("error", "Please provide Last Name, First Name, and Middle Name.");
   exit;
@@ -199,7 +209,7 @@ if (!$isMaifOffice && $type === "Other" && $type_specify === "") {
 if ($type !== "Other") {
   $type_specify = "";
 }
-if ($isMaifOffice && $municipality === "") {
+if ($isMaifStyleEntry && $municipality === "") {
   redirect_with_msg("error", "Please select a municipality for the MAIF entry.");
   exit;
 }
@@ -229,7 +239,7 @@ if ($ts === false) {
   exit;
 }
 
-if (!$isMaifOffice) {
+if (!$isMaifStyleEntry) {
   $age = null;
   $birthdate = "";
   $contactNumber = "";

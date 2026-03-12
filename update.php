@@ -253,22 +253,25 @@ if ($existingOfficeScope === "") {
 }
 $officeScopeToSave = $isOfficeScoped ? $scopedOffice : $existingOfficeScope;
 $isMaifRecord = is_maif_office_scope($officeScopeToSave);
+$isBorabodOffice = normalize_office_scope_name($officeScopeToSave) === "borabod";
 
 if ($isMaifRecord) {
   $type = "Medical";
   $typeSpecify = "";
-  $municipality = normalize_maif_municipality($postedMunicipality);
-  if ($municipality === "") {
-    redirect_edit($recordId, "error", "Please select a municipality for the MAIF entry.", $returnTo, $isPopup);
-  }
-} else {
-  $municipality = "Daet";
+}
+if (!$isMaifRecord && strcasecmp($type, "MAIF") === 0 && !$isBorabodOffice) {
+  redirect_edit($recordId, "error", "MAIF assistance type is only available in the Borabod office.", $returnTo, $isPopup);
+}
+$isMaifStyleRecord = $isMaifRecord || ($isBorabodOffice && strcasecmp($type, "MAIF") === 0);
+$municipality = $isMaifStyleRecord ? normalize_maif_municipality($postedMunicipality) : "Daet";
+if ($isMaifStyleRecord && $municipality === "") {
+  redirect_edit($recordId, "error", "Please select a municipality for the MAIF entry.", $returnTo, $isPopup);
 }
 
 if ($type === "") {
   redirect_edit($recordId, "error", "Please fill out all required fields correctly.", $returnTo, $isPopup);
 }
-if (!$isMaifRecord && $type === "Other" && $typeSpecify === "") {
+if (!$isMaifStyleRecord && $type === "Other" && $typeSpecify === "") {
   redirect_edit($recordId, "error", "Please specify the Type of Assistance when you choose Other.", $returnTo, $isPopup);
 }
 if ($type !== "Other") {
@@ -286,7 +289,7 @@ if ($ageRaw !== "") {
   }
 }
 
-if (!$isMaifRecord) {
+if (!$isMaifStyleRecord) {
   $age = null;
   $birthdate = "";
   $contactNumber = "";
